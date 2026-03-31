@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jessevdk/go-flags"
+	"golang.org/x/term"
 
 	"github.com/cotta-dev/retri/internal/config"
 	"github.com/cotta-dev/retri/internal/executor"
@@ -132,6 +133,10 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	// 8. Determine parallel count
 	parallelCount := config.DetermineParallelCount(cfg.Defaults.Parallel, opts.Parallel)
 
+	// 8a. Prompt for missing credentials (only for SSH targets, not record mode).
+	//     Check each target after full config resolution; prompt once if any are missing.
+	fallbackPassword, fallbackSecret := promptMissingCredentials(targets, cfg.Defaults, opts.Password, opts.Secret, opts.LogDir, opts.Suffix, opts.FilenameFormat, opts.TimestampFormat)
+
 	// 9. Main execution loop (parallel)
 	log.Printf("Starting tasks for %d hosts (Parallel: %d)...", len(targets), parallelCount)
 
@@ -148,12 +153,51 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 			executor.ExecuteHostTask(rh, cfg.Defaults,
 				opts.Command, opts.Password, opts.Secret,
 				opts.LogDir, opts.Suffix, opts.FilenameFormat, opts.TimestampFormat,
-				opts.ExitCommand, opts.NoTimestamp, opts.Debug)
+				opts.ExitCommand, fallbackPassword, fallbackSecret,
+				opts.NoTimestamp, opts.Debug)
 		}(target)
 	}
 
 	wg.Wait()
 	log.Println("All tasks finished.")
+}
+
+// promptMissingCredentials checks resolved settings for each target and prompts
+// the user (hidden input) for any credential that is missing across all targets.
+// Returns fallback values to be applied only to hosts that have no credential set.
+func promptMissingCredentials(targets []config.ResolvedHost, defaults config.GlobalOptions, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat string) (fallbackPassword, fallbackSecret string) {
+	needsPassword := false
+	needsSecret := false
+
+	for _, rh := range targets {
+		_, pw, sec, _, _, _, _, _ := config.ResolveSettings(rh, defaults, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat)
+		if pw == "" {
+			needsPassword = true
+		}
+		if sec == "" {
+			needsSecret = true
+		}
+	}
+
+	if needsPassword {
+		fmt.Fprint(os.Stderr, "SSH Password (leave blank to skip): ")
+		b, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(os.Stderr)
+		if err == nil {
+			fallbackPassword = string(b)
+		}
+	}
+
+	if needsSecret {
+		fmt.Fprint(os.Stderr, "Sudo Secret (leave blank to skip): ")
+		b, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(os.Stderr)
+		if err == nil {
+			fallbackSecret = string(b)
+		}
+	}
+
+	return
 }
 
 // runRecordMode starts a local shell session recording.
