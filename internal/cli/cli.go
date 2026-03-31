@@ -14,6 +14,7 @@ import (
 	"github.com/cotta-dev/retri/internal/config"
 	"github.com/cotta-dev/retri/internal/executor"
 	"github.com/cotta-dev/retri/internal/logger"
+	"github.com/cotta-dev/retri/internal/updater"
 )
 
 // Options defines the CLI flags.
@@ -47,6 +48,7 @@ type Options struct {
 	// Misc
 	ConfigHelp bool `short:"C" long:"config-help" description:"Show config file documentation"`
 	Version    bool `short:"v" long:"version" description:"Show version information"`
+	Update     bool `short:"u" long:"update" description:"Update retri to the latest version"`
 }
 
 // Run is the main entry point for the application.
@@ -69,6 +71,13 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 
 	if opts.Version {
 		fmt.Printf("%s version %s\n", config.AppName, version)
+		os.Exit(0)
+	}
+
+	if opts.Update {
+		if err := updater.Run(version); err != nil {
+			log.Fatalf("[ERROR] Update failed: %v", err)
+		}
 		os.Exit(0)
 	}
 
