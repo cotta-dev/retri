@@ -12,10 +12,19 @@ import (
 )
 
 // ExecuteHostTask runs the full command execution workflow for a single host.
-func ExecuteHostTask(rh config.ResolvedHost, defaults config.GlobalOptions, cliCommand, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat, cliExitCommand string, noTimestamp, debug bool) {
+// fallbackPassword and fallbackSecret are used only when the resolved value is empty (no config/env/CLI set).
+func ExecuteHostTask(rh config.ResolvedHost, defaults config.GlobalOptions, cliCommand, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat, cliExitCommand, fallbackPassword, fallbackSecret string, noTimestamp, debug bool) {
 	// 1. Resolve settings through the priority chain
 	user, password, secret, logDir, suffix, filenameFormat, timestampFormat, promptTimeout :=
 		config.ResolveSettings(rh, defaults, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat)
+
+	// Apply fallbacks only for hosts that have no password/secret configured.
+	if password == "" && fallbackPassword != "" {
+		password = fallbackPassword
+	}
+	if secret == "" && fallbackSecret != "" {
+		secret = fallbackSecret
+	}
 
 	// 2. Collect commands from all layers
 	allCommands := CollectCommands(rh, defaults, cliCommand)
