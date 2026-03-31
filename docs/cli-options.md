@@ -22,6 +22,7 @@ Application Options:
   -e, --exit-command=     Exit command for interactive sessions (default: exit)
   -C, --config-help       Show config file documentation
   -v, --version           Show version information
+  -u, --update            Update retri to the latest version
 
 Help Options:
   -h, --help              Show this help message
