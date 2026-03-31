@@ -2,6 +2,9 @@ version: 2
 
 project_name: retri
 
+snapshot:
+  version_template: "0.0.0-dev-{{.ShortCommit}}"
+
 before:
   hooks:
     - go mod tidy
