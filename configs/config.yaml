@@ -1,0 +1,48 @@
+# Retri Configuration File
+
+defaults:
+  # user: "admin"
+  # password: "${COMMON_PASSWORD}"
+  # secret: "${SUDO_PASSWORD}"
+  # parallel: auto
+  # command: "df -h"
+  # log_dir: "~/retri-logs"
+  # timestamp: true
+  # filename_format: "{host}_{timestamp}{suffix}.log"
+  # timestamp_format: "20060102_150405"
+  # suffix: ""
+  # device_type: "linux"
+
+# device_types:
+#   cisco_ios:
+#     prompt_regex: "[#>] ?$"
+#     setup_commands:
+#       - "terminal length 0"
+#     # password: "cisco_password"
+#
+#   arista_eos:
+#     prompt_regex: "[#>$] ?$"
+#     setup_commands:
+#       - "enable"
+#
+#   juniper_junos:
+#     setup_commands:
+#       - "set cli screen-length 0"
+#
+#   huawei:
+#     exit_command: "quit"
+#     setup_commands:
+#       - "screen-length 0 temporary"
+
+hosts:
+  # - host: "myserver"
+  #   groups: ["web"]
+
+  # Range expansion:
+  # - host: "switch-[01-04]"
+  #   device_type: "cisco_ios"
+
+groups:
+  # web:
+  #   hosts: ["myserver"]
+  #   commands: ["df -h", "uptime"]

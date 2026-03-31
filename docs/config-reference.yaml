@@ -1,0 +1,101 @@
+# Retri Config Reference
+#
+# Priority chain (low → high):
+#   defaults < device_types < groups < hosts < env vars < CLI flags
+#
+# Commands are AGGREGATED across all layers (not overridden).
+# suffix / filename_format / timestamp_format are only read from defaults (+ CLI).
+#
+# ${VAR} in any string value is expanded from environment variables at runtime.
+#
+# Legend:
+#   [required] must be specified
+#   [optional] can be omitted
+#   default: value shown when omitted
+
+# ===========================================================================
+# defaults — global fallback applied to all hosts
+# ===========================================================================
+defaults:
+  # --- CommonFields (shared with device_types / groups / hosts) ---
+  user: ""                  # [optional] default: current OS user (passed to ssh as-is)
+  password: ""              # [optional] default: none  — SSH password. Prefer ${VAR} or key auth
+  secret: ""                # [optional] default: none  — sudo / enable secret. Prefer ${VAR}
+  command: ""               # [optional] default: none  — single command (ignored if commands is set)
+  commands: []              # [optional] default: []    — list of commands to run
+  command_file: ""          # [optional] default: none  — path to file with commands (one per line)
+  log_dir: "~/retri-logs"   # [optional] default: ~/retri-logs
+  prompt_timeout: 300       # [optional] default: 300   — seconds to wait for prompt (interactive only)
+
+  # --- defaults-only fields ---
+  device_type: "linux"      # [optional] default: linux — fallback device type for all hosts
+  parallel: "auto"          # [optional] default: 5     — concurrent executions. "auto"=num CPUs or a number
+  timestamp: true           # [optional] default: true  — prefix each log line with a timestamp
+  filename_format: "{host}_{timestamp}{suffix}.log"  # [optional] default: as shown. vars: {host} {timestamp} {suffix}
+  timestamp_format: "YYYYMMDD_HHmmss"                # [optional] default: as shown. format for {timestamp} in filename_format
+                                                     #   symbols: YYYY MM DD HH mm ss
+  suffix: ""                # [optional] default: none  — appended to {suffix} in filename_format
+
+# ===========================================================================
+# device_types — reusable profiles for interactive (PTY) devices
+#                applied after defaults, before groups / hosts
+# ===========================================================================
+device_types:
+  my_device:            # key name — referenced via device_type in defaults / groups / hosts
+    # --- CommonFields ---
+    user: ""            # [optional] default: none
+    password: ""        # [optional] default: none
+    secret: ""          # [optional] default: none
+    command: ""         # [optional] default: none
+    commands: []        # [optional] default: []
+    command_file: ""    # [optional] default: none
+    log_dir: ""         # [optional] default: inherit from defaults
+    prompt_timeout: 0   # [optional] default: inherit from defaults (0 = inherit)
+
+    # --- device_types-only fields ---
+    prompt_regex: "[#>] ?$"    # [optional] default: [#>] ?$  — regex to detect CLI prompt
+    setup_commands: []         # [optional] default: []       — sent once at session start
+    exit_command: "exit"       # [optional] default: exit     — command to close the session
+
+# ===========================================================================
+# groups — apply shared settings to multiple hosts
+#          applied after defaults and device_types
+# ===========================================================================
+groups:
+  - name: "my_group"    # [required] — referenced via groups: [...] in hosts, or -g CLI flag
+
+    # --- CommonFields ---
+    user: ""            # [optional] default: none
+    password: ""        # [optional] default: none
+    secret: ""          # [optional] default: none
+    command: ""         # [optional] default: none
+    commands: []        # [optional] default: []
+    command_file: ""    # [optional] default: none
+    log_dir: ""         # [optional] default: inherit from defaults
+    prompt_timeout: 0   # [optional] default: inherit from defaults (0 = inherit)
+
+    # --- groups-only fields ---
+    device_type: ""     # [optional] default: none — override device_type for hosts in this group
+    suffix: ""          # [optional] default: none — overrides defaults.suffix for this group's logs
+    hosts: []           # [optional] default: []   — hostnames / ranges (e.g. "sw-[01-03]") in this group
+
+# ===========================================================================
+# hosts — individual host definitions (highest config priority)
+# ===========================================================================
+hosts:
+  - host: "myhost"      # [required] — hostname, IP, or SSH config alias.
+                        #   Range syntax: "sw-[01-03]" expands to sw-01, sw-02, sw-03
+
+    # --- CommonFields ---
+    user: ""            # [optional] default: none
+    password: ""        # [optional] default: none
+    secret: ""          # [optional] default: none
+    command: ""         # [optional] default: none
+    commands: []        # [optional] default: []
+    command_file: ""    # [optional] default: none
+    log_dir: ""         # [optional] default: inherit from defaults
+    prompt_timeout: 0   # [optional] default: inherit from defaults (0 = inherit)
+
+    # --- hosts-only fields ---
+    device_type: ""     # [optional] default: none — override device_type for this host
+    groups: []          # [optional] default: []   — group names this host belongs to
