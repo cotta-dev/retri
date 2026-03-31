@@ -166,20 +166,20 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 // the user (hidden input) for any credential that is missing across all targets.
 // Returns fallback values to be applied only to hosts that have no credential set.
 func promptMissingCredentials(targets []config.ResolvedHost, defaults config.GlobalOptions, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat string) (fallbackPassword, fallbackSecret string) {
-	needsPassword := false
-	needsSecret := false
+	var missingPasswordHosts, missingSecretHosts []string
 
 	for _, rh := range targets {
 		_, pw, sec, _, _, _, _, _ := config.ResolveSettings(rh, defaults, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat)
 		if pw == "" {
-			needsPassword = true
+			missingPasswordHosts = append(missingPasswordHosts, rh.HostConfig.Host)
 		}
 		if sec == "" {
-			needsSecret = true
+			missingSecretHosts = append(missingSecretHosts, rh.HostConfig.Host)
 		}
 	}
 
-	if needsPassword {
+	if len(missingPasswordHosts) > 0 {
+		fmt.Fprintf(os.Stderr, "[INFO] SSH password not set for: %s\n", strings.Join(missingPasswordHosts, ", "))
 		fmt.Fprint(os.Stderr, "SSH Password (leave blank to skip): ")
 		b, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Fprintln(os.Stderr)
@@ -188,7 +188,8 @@ func promptMissingCredentials(targets []config.ResolvedHost, defaults config.Glo
 		}
 	}
 
-	if needsSecret {
+	if len(missingSecretHosts) > 0 {
+		fmt.Fprintf(os.Stderr, "[INFO] Sudo secret not set for: %s\n", strings.Join(missingSecretHosts, ", "))
 		fmt.Fprint(os.Stderr, "Sudo Secret (leave blank to skip): ")
 		b, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Fprintln(os.Stderr)
