@@ -6,21 +6,21 @@
 [![Release](https://img.shields.io/github/v/release/cotta-dev/retri)](https://github.com/cotta-dev/retri/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Universal SSH Log Collector & Command Executor
+SSH Log Collector & Command Executor
 
-`Retri` is a lightweight, dependency-free CLI tool written in Go designed to automate command execution and log collection across multiple servers via SSH. It bridges the gap between simple shell scripts and complex configuration management tools like Ansible.
+The name **Retri** comes from **Retriever** — the dog breed famous for fetching things back. Just like a retriever, this tool goes out to your servers and brings back logs.
 
-It is specifically designed to handle interactive prompts (like sudo passwords or Cisco enable secrets) automatically using pseudo-terminals (pty), ensuring logs are captured exactly as if a human typed them.
+It was born from a desire to replicate the **TeraTerm log + macro workflow** in WSL (Windows Subsystem for Linux): define your commands in a config file, and Retri handles SSH connections, execution, and log saving automatically.
 
 ## Key Features
 
+* **Session Recording**: Run without any options to record your current shell session to a log file — just like TeraTerm's log function.
+* **Automated Command Execution**: Execute commands across multiple hosts and save timestamped logs — equivalent to a TeraTerm macro.
 * **Agentless**: Works with standard SSH. No software required on remote hosts.
-* **Dependency Free**: Single binary (statically linked).
-* **Smart Interactive Mode**: Automatically detects and handles password/sudo prompts even for network devices (Cisco, Juniper, etc.) without exposing passwords in logs.
-* **Environment Variable Support**: Securely manage credentials using `${VAR}` expansion in configuration files.
-* **Parallel Execution**: Run commands on dozens of servers concurrently with controlled concurrency.
-* **Real-time Logging**: Captures output with millisecond-precision timestamps.
-* **Config Aware**: Fully supports `~/.ssh/config` (aliases, proxy jumps, identity files).
+* **Dependency Free**: Single binary (statically linked). Download and run.
+* **Network Device Support**: Handles interactive PTY sessions for Cisco IOS, Arista EOS, Juniper, Huawei, etc. Passwords are never written to logs.
+* **Parallel Execution**: Run commands on multiple servers concurrently.
+* **SSH Config Aware**: Fully supports `~/.ssh/config` (aliases, proxy jumps, identity files).
 
 ## Installation
 
@@ -55,7 +55,17 @@ CGO_ENABLED=0 go install github.com/cotta-dev/retri@latest
 
 ## Usage
 
-### Basic Usage
+### Record a Work Session (no options)
+
+Running `retri` without any arguments starts recording your current shell session to a log file — equivalent to TeraTerm's log function.
+
+```bash
+retri
+# → starts logging to ~/retri-logs/hostname_YYYYMMDD_HHmmss.log
+# → type 'exit' or press Ctrl-D to stop recording
+```
+
+### Automate Commands and Collect Logs
 
 Run a command on a single host (using `~/.ssh/config` alias):
 ```bash
