@@ -64,7 +64,8 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	parser.Usage = "[OPTIONS] [hostname]\n\n" +
 		"  retri                  Start local work session recording\n" +
 		"  retri <hostname>       SSH to host and record the session\n" +
-		"  retri [OPTIONS]        Execute commands and collect logs"
+		"  retri [OPTIONS]        Execute commands and collect logs\n\n" +
+		"  Note: <hostname> is ignored when -H, -g, --command, or -f is specified."
 
 	remaining, err := parser.Parse()
 	if err != nil {

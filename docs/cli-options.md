@@ -6,6 +6,8 @@ Usage:
   retri <hostname>       SSH to host and record the session
   retri [OPTIONS]        Execute commands and collect logs
 
+  Note: <hostname> is ignored when -H, -g, --command, or -f is specified.
+
 
 Application Options:
   -c, --config=           Config file path (default: ~/.config/retri/config.yaml)
