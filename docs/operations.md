@@ -25,5 +25,5 @@ Downloads the dev `.deb` from the `dev` pre-release on the Releases page.
 ## Install from .deb
 
 ```bash
-sudo apt-get install -y /tmp/retri_VERSION_amd64.deb
+sudo apt-get install -y --allow-downgrades /tmp/retri_VERSION_amd64.deb
 ```
