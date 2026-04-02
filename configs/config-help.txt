@@ -1,90 +1,112 @@
 ================================================================================
-Retri Configuration File (config.yaml) Reference
+Retri Configuration File Reference
 ================================================================================
 
-This file is written in YAML format. The variables allowed in each section are
-strictly defined.
+Priority chain (low → high):
+  defaults < device_types < groups < hosts < env vars < CLI flags
 
---------------------------------------------------------------------------------
-Variable Precedence & Aggregation Rules
---------------------------------------------------------------------------------
+Commands are AGGREGATED across all layers (not overridden).
+suffix / filename_format / timestamp_format are only read from defaults (+ CLI).
 
-1. Single Variable Priority (<)
-   Evaluation Order: defaults < groups < device_types < hosts < env vars < CLI
-   (Values on the right override values on the left.)
+${VAR} in any string value is expanded from environment variables at runtime.
 
-   Environment variables:
-     - RETRI_SSH_PASSWORD: Overrides password from config (but not CLI -p)
-     - RETRI_SSH_SECRET:   Overrides secret from config (but not CLI -s)
+Environment variable overrides (between config and CLI):
+  RETRI_SSH_PASSWORD  — overrides password if not set in config
+  RETRI_SSH_SECRET    — overrides secret if not set in config
 
-2. Command Aggregation (+)
-   Execution Order:  defaults + groups + device_types + hosts
-   (Commands are concatenated in this order and all are executed.)
+Legend:
+  [required] must be specified
+  [optional] can be omitted; default shown
 
---------------------------------------------------------------------------------
-Section Definitions & Available Variables
---------------------------------------------------------------------------------
+================================================================================
+defaults — global fallback applied to all hosts
+================================================================================
 
-[defaults] Section
-  Sets global default values for the application.
+defaults:
+  user: ""                  # [optional] default: OS user — passed to ssh as-is
+  password: ""              # [optional] default: none — SSH password. Prefer ${VAR} or key auth
+  secret: ""                # [optional] default: none — sudo / enable secret. Prefer ${VAR}
+  command: ""               # [optional] default: none — single command (ignored if commands set)
+  commands: []              # [optional] default: []
+  command_file: ""          # [optional] default: none — path to file with commands (one per line)
+  log_dir: "~/retri-logs"   # [optional] default: ~/retri-logs
+  prompt_timeout: 300       # [optional] default: 300 — seconds to wait for prompt (interactive only)
 
-  Available Variables:
-    user, password, secret        : SSH/Sudo credentials (default fallback).
-    command, commands, command_file
-                                  : Commands to execute.
-    log_dir                       : Directory path for saving logs.
-    suffix                        : Suffix string appended to log filenames.
-    device_type                   : Default device type (e.g., "linux").
-    parallel                      : Parallel execution count or "auto".
-    timestamp                     : Enable/disable timestamp in logs (true/false). [defaults only]
-    filename_format               : Format string for log filenames. [defaults only]
-    timestamp_format              : Date format string for filenames. [defaults only]
+  # defaults-only fields:
+  device_type: "linux"      # [optional] default: linux — fallback device type for all hosts
+  parallel: "auto"          # [optional] default: 5 — concurrent executions. "auto"=num CPUs or integer
+  timestamp: true           # [optional] default: true — prefix each log line with a timestamp
+  filename_format: "{host}_{timestamp}{suffix}.log"
+                            # [optional] vars: {host} {timestamp} {suffix}
+  timestamp_format: "YYYYMMDD_HHmmss"
+                            # [optional] symbols: YYYY MM DD HH mm ss
+  suffix: ""                # [optional] default: none — appended to {suffix} in filename_format
 
-[device_types] Section
-  Defines settings specific to device types. Keys are arbitrary identifiers
-  (e.g., "cisco_ios", "linux").
+================================================================================
+device_types — reusable profiles for interactive (PTY) devices
+               applied after defaults, before groups / hosts
+================================================================================
 
-  Special Behavior for 'linux':
-    If device_type is set to "linux", commands are executed via direct SSH execution
-    (non-interactive, no PTY) to ensure clean output without terminal control codes.
-    All other types default to interactive PTY sessions.
+device_types:
+  my_device:                # key name — referenced via device_type in defaults / groups / hosts
+    user: ""                # [optional]
+    password: ""            # [optional]
+    secret: ""              # [optional]
+    command: ""             # [optional]
+    commands: []            # [optional]
+    command_file: ""        # [optional]
+    log_dir: ""             # [optional] default: inherit from defaults
+    prompt_timeout: 0       # [optional] default: inherit from defaults (0 = inherit)
 
-  Available Variables:
-    setup_commands                : Commands executed immediately after login. [device_types only]
-    prompt_regex                  : Regex to detect command prompts. [device_types only]
-    exit_command                  : Command to exit the session (default: "exit").
-                                    Use "quit" for Huawei devices. [device_types only]
-    user, password, secret        : Credentials common to this device type.
-    command, commands, command_file
-                                  : Commands common to this device type.
-    log_dir                       : Log storage directory for this type.
+    # device_types-only fields:
+    prompt_regex: "[#>] ?$" # [optional] default: [#>] ?$ — regex to detect CLI prompt
+    setup_commands: []      # [optional] default: [] — sent once at session start
+    exit_command: "exit"    # [optional] default: exit — use "quit" for Huawei
 
-[groups] Section
-  Groups multiple hosts together for shared configuration.
+  # Note: device_type "linux" uses direct SSH exec (no PTY) for clean output.
+  # All other types use interactive PTY sessions.
 
-  Available Variables:
-    name                          : Group name (Required).
-    hosts                         : List of hostnames belonging to the group.
-                                    (e.g., ["host1", "host2"])
-    user, password, secret        : Credentials common to the group.
-    command, commands, command_file
-                                  : Commands common to the group.
-    log_dir                       : Log storage directory for the group.
-    suffix                        : Suffix for log files in this group.
-    device_type                   : Device type applied to this group.
+================================================================================
+groups — apply shared settings to multiple hosts
+         applied after defaults and device_types
+================================================================================
 
-[hosts] Section
-  Configures settings for individual hosts.
+groups:
+  - name: "my_group"        # [required] — referenced via groups: [...] in hosts, or -g CLI flag
+    user: ""                # [optional]
+    password: ""            # [optional]
+    secret: ""              # [optional]
+    command: ""             # [optional]
+    commands: []            # [optional]
+    command_file: ""        # [optional]
+    log_dir: ""             # [optional] default: inherit from defaults
+    prompt_timeout: 0       # [optional] default: inherit (0 = inherit)
 
-  Available Variables:
-    host                          : Hostname or IP (Required).
-                                    Supports range expansion (e.g., "switch-[01-10]").
-    groups                        : List of group names this host belongs to.
-                                    (e.g., ["group1"])
-    user, password, secret        : Host-specific credentials.
-    command, commands, command_file
-                                  : Host-specific commands.
-    log_dir                       : Host-specific log directory.
-    device_type                   : Host-specific device type.
+    # groups-only fields:
+    device_type: ""         # [optional] — override device_type for hosts in this group
+    suffix: ""              # [optional] — overrides defaults.suffix for this group's logs
+    hosts: []               # [optional] — hostnames / ranges (e.g. "sw-[01-03]")
 
+================================================================================
+hosts — individual host definitions (highest config priority)
+================================================================================
+
+hosts:
+  - host: "myhost"          # [required] — hostname, IP, or SSH config alias
+                            #   Range syntax: "sw-[01-03]" expands to sw-01, sw-02, sw-03
+    user: ""                # [optional]
+    password: ""            # [optional]
+    secret: ""              # [optional]
+    command: ""             # [optional]
+    commands: []            # [optional]
+    command_file: ""        # [optional]
+    log_dir: ""             # [optional] default: inherit from defaults
+    prompt_timeout: 0       # [optional] default: inherit (0 = inherit)
+
+    # hosts-only fields:
+    device_type: ""         # [optional] — override device_type for this host
+    groups: []              # [optional] — group names this host belongs to
+
+================================================================================
+Full reference with examples: docs/config-reference.yaml
 ================================================================================
