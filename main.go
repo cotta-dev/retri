@@ -10,7 +10,7 @@ import (
 //go:embed configs/config.yaml
 var defaultConfigContent []byte
 
-//go:embed configs/config-help.txt
+//go:embed docs/config-reference.yaml
 var helpContent string
 
 // Version is set via ldflags by GoReleaser (e.g., -X main.Version=1.2.3).
