@@ -144,12 +144,5 @@ File: `myserver_20251129_120000.log`
 ============================================================
 ```
 
-## Release
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
 ## License
 Distributed under the MIT License. See LICENSE for more information.
