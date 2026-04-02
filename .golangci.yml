@@ -1,0 +1,27 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - staticcheck
+    - gosec
+    - govet
+  settings:
+    gosec:
+      excludes:
+        # G204: subprocess via variable — intentional (ssh, shell commands)
+        - G204
+        # G301: dir permission 0755 — acceptable for user config dirs (~/.config/retri)
+        - G301
+        # G304: file inclusion via variable — intentional (user-specified config/log paths)
+        - G304
+        # G306: file permission 0644 — acceptable for config files
+        - G306
+        # G107: HTTP request with variable URL — intentional (GitHub API download URL)
+        - G107
+        # G115: uintptr->int conversion — standard pattern for terminal fd (os.Stdin.Fd())
+        - G115
+        # G602: slice bounds false positive — result is [3]int array, always valid
+        - G602
+        # G702: command injection via taint — intentional use of $SHELL env var
+        - G702
