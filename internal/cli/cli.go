@@ -61,7 +61,10 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	var opts Options
 	parser := flags.NewParser(&opts, flags.Default)
 	parser.Name = config.AppName
-	parser.Usage = "[OPTIONS]"
+	parser.Usage = "[OPTIONS] [hostname]\n\n" +
+		"  retri                  Start local work session recording\n" +
+		"  retri <hostname>       SSH to host and record the session\n" +
+		"  retri [OPTIONS]        Execute commands and collect logs"
 
 	remaining, err := parser.Parse()
 	if err != nil {

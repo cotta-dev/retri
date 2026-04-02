@@ -2,7 +2,10 @@
 
 ```
 Usage:
-  retri [OPTIONS]
+  retri                  Start local work session recording
+  retri <hostname>       SSH to host and record the session
+  retri [OPTIONS]        Execute commands and collect logs
+
 
 Application Options:
   -c, --config=           Config file path (default: ~/.config/retri/config.yaml)

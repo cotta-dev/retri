@@ -14,7 +14,8 @@ It was born from a desire to replicate the **TeraTerm log + macro workflow** in 
 
 ## Key Features
 
-* **Session Recording**: Run without any options to record your current shell session to a log file — just like TeraTerm's log function.
+* **Local Session Recording**: Run without any arguments to record your current shell session to a log file — just like TeraTerm's log function.
+* **SSH Session Recording**: Pass a hostname as an argument to SSH into a remote host and record the entire session automatically.
 * **Automated Command Execution**: Execute commands across multiple hosts and save timestamped logs — equivalent to a TeraTerm macro.
 * **Agentless**: Works with standard SSH. No software required on remote hosts.
 * **Dependency Free**: Single binary (statically linked). Download and run.
@@ -55,14 +56,24 @@ CGO_ENABLED=0 go install github.com/cotta-dev/retri@latest
 
 ## Usage
 
-### Record a Work Session (no options)
+### Record a Local Work Session (no arguments)
 
-Running `retri` without any arguments starts recording your current shell session to a log file — equivalent to TeraTerm's log function.
+Running `retri` without any arguments starts recording your current shell session to a log file.
 
 ```bash
 retri
 # → starts logging to ~/retri-logs/hostname_YYYYMMDD_HHmmss.log
 # → type 'exit' or press Ctrl-D to stop recording
+```
+
+### SSH + Record Session (hostname as argument)
+
+Pass a hostname to SSH into the remote host and record the entire interactive session.
+
+```bash
+retri myserver
+# → SSHes to myserver and records the session to ~/retri-logs/myserver_YYYYMMDD_HHmmss.log
+# → type 'exit' to disconnect and stop recording
 ```
 
 ### Automate Commands and Collect Logs
