@@ -1,0 +1,15 @@
+linters:
+  enable:
+    - errcheck
+    - staticcheck
+    - gosec      # Security vulnerability scanner
+    - gosimple
+    - govet
+
+linters-settings:
+  gosec:
+    excludes:
+      # G204: subprocess launched with variable — intentional (ssh command)
+      - G204
+      # G306: file permission 0644 for config — acceptable
+      - G306
