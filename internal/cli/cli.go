@@ -63,7 +63,8 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	parser.Name = config.AppName
 	parser.Usage = "[OPTIONS]"
 
-	if _, err := parser.Parse(); err != nil {
+	remaining, err := parser.Parse()
+	if err != nil {
 		if flags.WroteHelp(err) {
 			os.Exit(0)
 		}
@@ -124,7 +125,13 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 
 	// 6. Record mode: no target or command specified → start session recording
 	if opts.Host == "" && opts.Group == "" && opts.Command == "" && opts.CommandFile == "" {
-		runRecordMode(opts, cfg.Defaults)
+		if len(remaining) == 1 {
+			// retri <hostname> → SSH to host and record session
+			runSSHRecordMode(opts, remaining[0], cfg.Defaults)
+		} else {
+			// retri (no args) → record local shell session
+			runRecordMode(opts, cfg.Defaults)
+		}
 		return
 	}
 
@@ -208,6 +215,48 @@ func promptMissingCredentials(targets []config.ResolvedHost, defaults config.Glo
 	}
 
 	return
+}
+
+// runSSHRecordMode SSHes to host and records the interactive session to a log file.
+func runSSHRecordMode(opts Options, host string, defaults config.GlobalOptions) {
+	logDir := opts.LogDir
+	if logDir == "" && defaults.LogDir != "" {
+		logDir = defaults.LogDir
+	}
+	suffix := opts.Suffix
+	if suffix == "" {
+		suffix = defaults.Suffix
+	}
+	fileFmt := opts.FilenameFormat
+	if fileFmt == "" {
+		fileFmt = defaults.FilenameFormat
+	}
+	tsFmt := opts.TimestampFormat
+	if tsFmt == "" {
+		tsFmt = defaults.TimestampFormat
+	}
+
+	lg, logFile, logPath, err := logger.SetupLogger(host, logDir, fileFmt, tsFmt, suffix, opts.NoTimestamp, defaults.Timestamp)
+	if err != nil {
+		log.Fatalf("[ERROR] Failed to setup logger: %v", err)
+	}
+	defer func() { _ = logFile.Close() }()
+
+	header := fmt.Sprintf("%s\n SESSION LOG : %s\n START TIME  : %s\n%s\n",
+		strings.Repeat("=", 60), host, time.Now().Format("2006-01-02 15:04:05"), strings.Repeat("=", 60))
+	lg.WriteRaw(header)
+
+	log.Printf("SSH to %s — recording session to: %s", host, logPath)
+
+	if err := executor.RunSSHRecordSession(host, "", lg, opts.Debug); err != nil {
+		log.Printf("[ERROR] SSH session error: %v", err)
+	}
+
+	footer := fmt.Sprintf("\n%s\n LOG END     : %s\n%s\n",
+		strings.Repeat("=", 60), time.Now().Format("2006-01-02 15:04:05"), strings.Repeat("=", 60))
+	lg.WriteRaw(footer)
+
+	log.Printf("Session log saved: %s", logPath)
 }
 
 // runRecordMode starts a local shell session recording.
