@@ -37,3 +37,11 @@ configs/
 ## Release
 
 Tag push (`v*`) triggers GoReleaser via GitHub Actions → publishes `.deb` (amd64/arm64) to GitHub Releases.
+
+## Branch Workflow
+
+- **Always branch before pushing** — never push directly to `main`
+- **One feature per branch** — keep features isolated (e.g., `feat/xxx`, `fix/xxx`, `chore/xxx`)
+- Merge via PR on GitHub
+- **No interactive confirmation needed** — create branch, implement, and push without asking
+- **Security checks are mandatory** — verify for security issues before making changes, before committing, and before pushing
