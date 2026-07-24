@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+set -e
+
+cat <<'EOF'
+==> Retri completion was installed/updated
+
+New terminal sessions will use the new completion automatically.
+
+If completion in your current terminal still looks old, reload your shell:
+
+  exec bash -l
+  exec zsh -l
+  exec fish
+
+Bash users can reload only retri completion instead:
+
+  complete -r retri 2>/dev/null
+  unset -f _retri_completion 2>/dev/null
+  source /usr/share/bash-completion/completions/retri
+EOF

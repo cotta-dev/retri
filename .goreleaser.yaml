@@ -1,0 +1,50 @@
+version: 2
+
+project_name: retri
+
+snapshot:
+  version_template: "0.0.0-dev-{{.ShortCommit}}"
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+
+checksum:
+  disable: true
+
+nfpms:
+  - id: packages
+    package_name: retri
+    vendor: cotta-dev
+    homepage: "https://github.com/cotta-dev/retri"
+    maintainer: "cotta-dev"
+    description: "Universal SSH Log Collector & Command Executor"
+    license: "MIT"
+    formats:
+      - deb
+    scripts:
+      postinstall: packaging/deb/postinst
+    contents:
+      - src: completions/retri.bash
+        dst: /usr/share/bash-completion/completions/retri
+      - src: completions/retri.zsh
+        dst: /usr/share/zsh/vendor-completions/_retri
+      - src: completions/retri.fish
+        dst: /usr/share/fish/vendor_completions.d/retri.fish
+    file_name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- if eq .Arch "amd64" }}amd64
+      {{- else if eq .Arch "arm64" }}arm64
+      {{- else }}{{ .Arch }}{{ end }}
