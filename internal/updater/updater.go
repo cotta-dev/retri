@@ -17,7 +17,10 @@ import (
 
 const repoAPI = "https://api.github.com/repos/cotta-dev/retri/releases/latest"
 
-const maxUpdateSize = 256 << 20
+const (
+	maxUpdateSize         = 256 << 20
+	aptSandboxPackageMode = 0o644
+)
 
 var (
 	httpClient     = &http.Client{Timeout: 3 * time.Second}
@@ -86,6 +89,9 @@ func Run(currentVersion string) error {
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("sync downloaded package: %w", err)
 	}
+	if err := makePackageReadableByAPT(f); err != nil {
+		return fmt.Errorf("prepare package for apt sandbox: %w", err)
+	}
 	closeErr := f.Close()
 	fileOpen = false
 	if closeErr != nil {
@@ -102,6 +108,12 @@ func Run(currentVersion string) error {
 
 	fmt.Printf("Successfully updated to v%s\n", latest)
 	return nil
+}
+
+// makePackageReadableByAPT grants the unprivileged _apt sandbox read access
+// only after the public release package has been downloaded and synced.
+func makePackageReadableByAPT(file *os.File) error {
+	return file.Chmod(aptSandboxPackageMode)
 }
 
 func fetchLatest(ctx context.Context, client *http.Client, url string) (*release, error) {
