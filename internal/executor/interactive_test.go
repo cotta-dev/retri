@@ -127,6 +127,96 @@ done
 	}
 }
 
+func TestRunInteractive_LongOutputDoesNotAdvanceOnPromptLikeSuffix(t *testing.T) {
+	dir := t.TempDir()
+	fakeSSH := filepath.Join(dir, "ssh")
+	script := `#!/bin/sh
+prompt='tester@long-output:~$ '
+printf '%s' "$prompt"
+while IFS= read -r command; do
+    case "$command" in
+        'long-output')
+            i=0
+            while [ "$i" -lt 600 ]; do
+                printf 'output line %s\r\n' "$i"
+                i=$((i + 1))
+            done
+            printf 'ordinary output ending in $'
+            sleep 1
+            printf '\r\nfinal long output line\r\n'
+            ;;
+        'next-command')
+            printf 'next command output\r\n'
+            ;;
+        'exit')
+            printf 'logout\r\n'
+            exit 0
+            ;;
+    esac
+    printf '%s' "$prompt"
+done
+`
+	if err := os.WriteFile(fakeSSH, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var output bytes.Buffer
+	ll := logger.NewLineLogger(&output, false)
+	if ok := RunInteractive(
+		"long-output",
+		"tester",
+		[]string{"long-output", "next-command"},
+		ll,
+		ll,
+		"",
+		"",
+		`[#%>$] ?$`,
+		"exit",
+		3*time.Second,
+		false,
+	); !ok {
+		t.Fatalf("RunInteractive() failed:\n%s", output.String())
+	}
+	ll.Flush()
+
+	got := output.String()
+	finalOutput := strings.Index(got, "final long output line")
+	nextHeader := strings.Index(got, "[EXEC] next-command")
+	if finalOutput < 0 || nextHeader < 0 {
+		t.Fatalf("expected output or next header is missing:\n%s", got)
+	}
+	if nextHeader < finalOutput {
+		t.Fatalf("next command header was logged before long output completed:\n%s", got)
+	}
+	want := "[EXEC] next-command\n----------------------------------------\n" +
+		"tester@long-output:~$ next-command\n"
+	if !strings.Contains(got, want) {
+		t.Fatalf("next command header/echo order is incorrect:\nwant fragment %q\nlog:\n%s", want, got)
+	}
+}
+
+func TestTerminalPromptFamily(t *testing.T) {
+	tests := map[string]string{
+		"tester@host:~$ ":      "tester@host",
+		"tester@host:/etc#":    "tester@host",
+		"Router#":              "Router",
+		"Router(config-if)#":   "Router",
+		"user@router> ":        "user@router",
+		"<HUAWEI>":             "HUAWEI",
+		"[HUAWEI]":             "HUAWEI",
+		"[tester@host ~]$":     "tester@host",
+		"ordinary output in $": "ordinary output in",
+		"$":                    "$",
+	}
+
+	for input, want := range tests {
+		if got := terminalPromptFamily(input); got != want {
+			t.Errorf("terminalPromptFamily(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func commandExitError(t *testing.T, code int) error {
 	t.Helper()
 	err := exec.Command("sh", "-c", fmt.Sprintf("exit %d", code)).Run()

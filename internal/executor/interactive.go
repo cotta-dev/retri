@@ -248,6 +248,7 @@ func handlePrompts(r io.Reader, w io.Writer, password, secret, promptRegex strin
 	buf := make([]byte, config.ReadBufferSize)
 	var lineBuffer []byte
 	var expectedEcho string
+	var promptFamily string
 
 	for {
 		n, err := r.Read(buf)
@@ -334,6 +335,16 @@ func handlePrompts(r io.Reader, w io.Writer, password, secret, promptRegex strin
 				if len(lines) > 0 {
 					lastLine := lines[len(lines)-1]
 					if re.MatchString(lastLine) {
+						candidateFamily := terminalPromptFamily(lastLine)
+						if promptFamily != "" && candidateFamily != promptFamily {
+							if debug {
+								log.Printf("[DEBUG] Ignoring prompt-like output %q (expected family %q)", lastLine, promptFamily)
+							}
+							continue
+						}
+						if promptFamily == "" {
+							promptFamily = candidateFamily
+						}
 						select {
 						case promptCh <- struct{}{}:
 							lineBuffer = nil
@@ -348,6 +359,55 @@ func handlePrompts(r io.Reader, w io.Writer, password, secret, promptRegex strin
 		}
 	}
 	doneCh <- nil
+}
+
+// terminalPromptFamily extracts the stable identity from common shell and
+// network prompts. Prompt suffix regexes alone are intentionally permissive,
+// so an arbitrary long-output chunk can otherwise look complete when its last
+// byte happens to be '#', '>', or '$'.
+//
+// Examples from the same family include:
+//   - user@host:~$ and user@host:/etc#
+//   - Router# and Router(config)#
+//   - <HUAWEI> and [HUAWEI]
+func terminalPromptFamily(line string) string {
+	original := strings.TrimSpace(line)
+	if original == "" {
+		return ""
+	}
+
+	if len(original) >= 2 && original[0] == '<' && original[len(original)-1] == '>' {
+		return strings.TrimSpace(original[1 : len(original)-1])
+	}
+
+	normalized := original
+	switch normalized[len(normalized)-1] {
+	case '#', '%', '>', '$':
+		normalized = strings.TrimSpace(normalized[:len(normalized)-1])
+	}
+	if len(normalized) >= 2 && normalized[0] == '[' && normalized[len(normalized)-1] == ']' {
+		normalized = strings.TrimSpace(normalized[1 : len(normalized)-1])
+	}
+
+	if at := strings.LastIndexByte(normalized, '@'); at >= 0 {
+		start := strings.LastIndexAny(normalized[:at], " [")
+		start++
+		end := len(normalized)
+		if offset := strings.IndexAny(normalized[at+1:], ": "); offset >= 0 {
+			end = at + 1 + offset
+		}
+		if start < end {
+			return normalized[start:end]
+		}
+	}
+
+	if mode := strings.IndexByte(normalized, '('); mode > 0 {
+		return strings.TrimSpace(normalized[:mode])
+	}
+	if normalized == "" {
+		return original
+	}
+	return normalized
 }
 
 func writeInteractiveInput(w io.Writer, input string) error {
