@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
 	"testing"
 )
 
@@ -76,5 +77,32 @@ func TestDownloadRejectsErrorStatusAndOversizedPackage(t *testing.T) {
 				t.Fatal("download() accepted an invalid response")
 			}
 		})
+	}
+}
+
+func TestMakePackageReadableByAPT(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "retri-update-*.deb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+
+	initialInfo, err := file.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := initialInfo.Mode().Perm(); got != 0o600 {
+		t.Fatalf("initial package mode = %04o, want 0600", got)
+	}
+
+	if err := makePackageReadableByAPT(file); err != nil {
+		t.Fatal(err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != aptSandboxPackageMode {
+		t.Fatalf("package mode = %04o, want %04o", got, aptSandboxPackageMode)
 	}
 }
