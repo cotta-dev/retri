@@ -1,4 +1,6 @@
 # Retri Configuration File
+#
+# Run "retri -C" to view all available options, priorities, and examples.
 
 defaults:
   # user: "admin"
@@ -41,6 +43,11 @@ defaults:
 #     setup_commands:
 #       - "screen-length 0 temporary"
 
+groups:
+  # - name: "web"
+  #   hosts: ["myserver"]
+  #   commands: ["df -h", "uptime"]
+
 hosts:
   # - host: "myserver"
   #   groups: ["web"]
@@ -48,8 +55,3 @@ hosts:
   # Range expansion:
   # - host: "switch-[01-04]"
   #   device_type: "cisco_ios"
-
-groups:
-  # - name: "web"
-  #   hosts: ["myserver"]
-  #   commands: ["df -h", "uptime"]
