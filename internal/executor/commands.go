@@ -6,6 +6,8 @@ import (
 	"github.com/cotta-dev/retri/internal/config"
 )
 
+const disableShellHistoryCommand = "unset HISTFILE"
+
 // CollectCommands gathers commands from all config layers.
 // Commands are aggregated (not overridden) in order:
 // defaults + groups + device_types + hosts + CLI file + CLI command.
@@ -63,8 +65,15 @@ func CollectCommands(rh config.ResolvedHost, defaults config.GlobalOptions, cliC
 // setup_commands backing array. Device configs are shared by resolved hosts,
 // so appending in place would let parallel hosts overwrite each other's
 // host-specific commands.
-func buildExecutionCommands(setupCommands, commands []string) []string {
-	result := make([]string, 0, len(setupCommands)+len(commands))
+func buildExecutionCommands(setupCommands, commands []string, disableShellHistory bool) []string {
+	extra := 0
+	if disableShellHistory {
+		extra = 1
+	}
+	result := make([]string, 0, extra+len(setupCommands)+len(commands))
+	if disableShellHistory {
+		result = append(result, disableShellHistoryCommand)
+	}
 	result = append(result, setupCommands...)
 	result = append(result, commands...)
 	return result

@@ -95,7 +95,11 @@ func ExecuteHostTask(rh config.ResolvedHost, defaults config.GlobalOptions, opti
 	// Build a private per-host snapshot. DeviceConfig is shared by hosts with
 	// the same device type, so its setup slice must never be appended to in
 	// place during parallel execution.
-	fullCmdList := buildExecutionCommands(rh.DeviceConfig.SetupCommands, allCommands)
+	// Automated Linux commands must not be appended to the remote shell's
+	// persistent history. Keep this out of network-device sessions, where an
+	// unknown shell command could alter CLI behavior.
+	disableShellHistory := rh.DeviceType == config.DefaultDeviceType
+	fullCmdList := buildExecutionCommands(rh.DeviceConfig.SetupCommands, allCommands, disableShellHistory)
 
 	// Use a real PTY for Linux and network devices alike. This keeps the remote
 	// shell/CLI prompt, its actual command echo, and output in one terminal
