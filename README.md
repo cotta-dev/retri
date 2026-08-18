@@ -227,6 +227,11 @@ The shell/CLI prompt, command echo, and output therefore come from the same
 remote terminal session; Retri does not derive a Linux prompt from user,
 hostname, or directory values.
 
+Before an automated Linux batch, Retri sends and records `unset HISTFILE` in
+the same PTY. This prevents the batch commands and final `exit` from being
+written to the remote shell's persistent history. Interactive recording modes
+and network-device CLI history are not changed.
+
 The `[EXEC]` marker is followed by the terminal transcript's
 `prompt + command` line. An idle prompt is not written separately before the
 marker. Retri records the terminal-rendered result of the actual PTY stream; it

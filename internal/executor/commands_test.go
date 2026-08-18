@@ -62,8 +62,8 @@ func TestBuildExecutionCommandsDoesNotAliasSharedSetupCommands(t *testing.T) {
 	sharedSetup := make([]string, 1, 8)
 	sharedSetup[0] = "terminal length 0"
 
-	first := buildExecutionCommands(sharedSetup, []string{"show host-a"})
-	second := buildExecutionCommands(sharedSetup, []string{"show host-b"})
+	first := buildExecutionCommands(sharedSetup, []string{"show host-a"}, false)
+	second := buildExecutionCommands(sharedSetup, []string{"show host-b"}, false)
 
 	first[0] = "changed setup"
 	first[1] = "changed host command"
@@ -77,6 +77,21 @@ func TestBuildExecutionCommandsDoesNotAliasSharedSetupCommands(t *testing.T) {
 		if i > 0 && command != "" {
 			t.Fatalf("shared setup backing array was overwritten at index %d: %q", i, command)
 		}
+	}
+}
+
+func TestBuildExecutionCommandsDisablesOnlyShellHistory(t *testing.T) {
+	setup := []string{"prepare-session"}
+	commands := []string{"collect-output"}
+
+	linux := buildExecutionCommands(setup, commands, true)
+	if want := []string{disableShellHistoryCommand, "prepare-session", "collect-output"}; !reflect.DeepEqual(linux, want) {
+		t.Fatalf("Linux execution commands = %#v, want %#v", linux, want)
+	}
+
+	network := buildExecutionCommands(setup, commands, false)
+	if want := []string{"prepare-session", "collect-output"}; !reflect.DeepEqual(network, want) {
+		t.Fatalf("network execution commands = %#v, want %#v", network, want)
 	}
 }
 

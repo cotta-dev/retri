@@ -1,7 +1,9 @@
 package executor
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -128,6 +130,65 @@ done
 	}
 }
 
+func TestExecuteHostTask_LinuxBatchDoesNotPersistShellHistory(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is unavailable")
+	}
+
+	binDir := t.TempDir()
+	writeFakeSSH(t, binDir, fmt.Sprintf("#!/bin/sh\nexec %q --noprofile --norc -i\n", bash))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PS1", "tester@history-host:~$ ")
+	t.Setenv("PROMPT_COMMAND", "")
+	t.Setenv("HISTCONTROL", "")
+	historyPath := filepath.Join(t.TempDir(), "bash_history")
+	const existingHistory = "existing-command\n"
+	if err := os.WriteFile(historyPath, []byte(existingHistory), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HISTFILE", historyPath)
+
+	noTimestamp := false
+	logDir := t.TempDir()
+	rh := config.ResolvedHost{
+		HostConfig: config.HostConfig{
+			Host: "history-host",
+			CommonFields: config.CommonFields{
+				User:          "tester",
+				Commands:      []string{"echo batch-marker"},
+				PromptTimeout: 2,
+			},
+		},
+		DeviceConfig: config.DeviceConfig{ExitCommand: "exit"},
+		DeviceType:   config.DefaultDeviceType,
+	}
+	defaults := config.GlobalOptions{
+		Timestamp:      &noTimestamp,
+		FilenameFormat: "{host}.log",
+	}
+
+	ExecuteHostTask(rh, defaults, HostTaskOptions{LogDir: logDir})
+
+	history, err := os.ReadFile(historyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(history); got != existingHistory {
+		t.Fatalf("persistent shell history changed: got %q, want %q", got, existingHistory)
+	}
+	logBytes, err := os.ReadFile(filepath.Join(logDir, "history-host.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	logText := string(logBytes)
+	for _, command := range []string{disableShellHistoryCommand, "echo batch-marker"} {
+		if !strings.Contains(logText, "[EXEC] "+command+"\n") {
+			t.Fatalf("execution log is missing %q:\n%s", command, logText)
+		}
+	}
+}
+
 func TestExecuteHostTask_LogsExecHeaderForEveryCommandSource(t *testing.T) {
 	binDir := t.TempDir()
 	writeFakeSSH(t, binDir, `#!/bin/sh
@@ -204,6 +265,7 @@ done
 	}
 	got := string(logBytes)
 	wantCommands := []string{
+		disableShellHistoryCommand,
 		"device-setup",
 		"default-file", "default-list", "default-single",
 		"group-file", "group-list", "group-single",
