@@ -25,7 +25,7 @@ func RunSSHRecordSession(host, user string, lg *logger.LineLogger, commandsOnly,
 	args = append(args, "--", host)
 
 	c := exec.Command("ssh", args...)
-	c.Env = os.Environ()
+	c.Env = sanitizedEnvironment(os.Environ())
 
 	ptmx, err := pty.Start(c)
 	if err != nil {
@@ -98,7 +98,7 @@ func RunRecordSession(lg *logger.LineLogger, commandsOnly, debug bool) error {
 	// Set argv[0] to "-<shell>" to start as a login shell,
 	// so that .bash_profile / .zprofile (and thus .bashrc / .zshrc) are sourced.
 	c.Args[0] = "-" + filepath.Base(shell)
-	c.Env = os.Environ()
+	c.Env = sanitizedEnvironment(os.Environ())
 
 	// Start PTY with current terminal size
 	ptmx, err := pty.Start(c)
