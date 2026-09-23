@@ -3,15 +3,17 @@ package config
 // CommonFields contains settings shared across multiple config sections.
 // Embedded with yaml:",inline" to flatten fields in YAML.
 type CommonFields struct {
-	User          string   `yaml:"user"`
-	Password      string   `yaml:"password"`
-	Secret        string   `yaml:"secret"`
-	Command       string   `yaml:"command"`
-	Commands      []string `yaml:"commands"`
-	CommandFile   string   `yaml:"command_file"`
-	LogDir        string   `yaml:"log_dir"`
-	LogEncoding   string   `yaml:"log_encoding"`
-	PromptTimeout int      `yaml:"prompt_timeout"`
+	User               string   `yaml:"user"`
+	Password           string   `yaml:"password"`
+	PasswordCredential string   `yaml:"password_credential"`
+	Secret             string   `yaml:"secret"`
+	SecretCredential   string   `yaml:"secret_credential"`
+	Command            string   `yaml:"command"`
+	Commands           []string `yaml:"commands"`
+	CommandFile        string   `yaml:"command_file"`
+	LogDir             string   `yaml:"log_dir"`
+	LogEncoding        string   `yaml:"log_encoding"`
+	PromptTimeout      int      `yaml:"prompt_timeout"`
 }
 
 // FieldProvider is implemented by config sections that contain CommonFields.
@@ -19,12 +21,30 @@ type FieldProvider interface {
 	Common() *CommonFields
 }
 
+// CredentialCacheConfig controls optional provider-independent credential caching.
+type CredentialCacheConfig struct {
+	Backend string `yaml:"backend"`
+	TTL     string `yaml:"ttl"`
+}
+
+// CredentialSpec defines a named credential source.
+// Supported providers are prompt, env, literal, keyring, and bitwarden.
+type CredentialSpec struct {
+	Provider string                `yaml:"provider"`
+	Ref      string                `yaml:"ref"`
+	Field    string                `yaml:"field"`
+	Prompt   string                `yaml:"prompt"`
+	Value    string                `yaml:"value"`
+	Cache    CredentialCacheConfig `yaml:"cache"`
+}
+
 // Config represents the entire config.yaml structure.
 type Config struct {
-	Defaults    GlobalOptions           `yaml:"defaults"`
-	DeviceTypes map[string]DeviceConfig `yaml:"device_types"`
-	Hosts       []HostConfig            `yaml:"hosts"`
-	Groups      []GroupConfig           `yaml:"groups"`
+	Credentials map[string]CredentialSpec `yaml:"credentials"`
+	Defaults    GlobalOptions             `yaml:"defaults"`
+	DeviceTypes map[string]DeviceConfig   `yaml:"device_types"`
+	Hosts       []HostConfig              `yaml:"hosts"`
+	Groups      []GroupConfig             `yaml:"groups"`
 }
 
 // GlobalOptions represents the "defaults" section.
