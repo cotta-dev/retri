@@ -26,9 +26,10 @@ func RunInteractive(host, user string, commands []string, tw *logger.LineLogger,
 		destination = user + "@" + host
 	}
 
-	// Force TTY allocation with -t
+	// Force TTY allocation with -t. Do not pass known secret-bearing variables
+	// to the SSH child; credentials are written to the PTY only when prompted.
 	c := exec.Command("ssh", "-t", "--", destination)
-	c.Env = append(os.Environ(), "TERM=dumb")
+	c.Env = append(sanitizedEnvironment(os.Environ()), "TERM=dumb")
 
 	// Start PTY (pseudo-terminal)
 	ptmx, err := pty.StartWithSize(c, &pty.Winsize{
