@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jessevdk/go-flags"
-	"golang.org/x/term"
 
 	"github.com/cotta-dev/retri/internal/config"
 	"github.com/cotta-dev/retri/internal/executor"
@@ -45,8 +44,8 @@ type Options struct {
 	NoTimestamp bool `short:"T" long:"no-timestamp" description:"Disable timestamp logging"`
 
 	// Authentication (also available via RETRI_SSH_PASSWORD / RETRI_SSH_SECRET)
-	Password    string `short:"p" long:"password" description:"SSH Password (default: $RETRI_SSH_PASSWORD or config)"`
-	Secret      string `short:"s" long:"secret" description:"Sudo Secret (default: $RETRI_SSH_SECRET or config)"`
+	Password    string `short:"p" long:"password" description:"SSH password literal override; command-line values may be visible to other processes"`
+	Secret      string `short:"s" long:"secret" description:"Sudo/enable secret literal override; command-line values may be visible to other processes"`
 	ExitCommand string `short:"e" long:"exit-command" description:"Exit command for interactive sessions (default: exit)"`
 
 	// Misc
@@ -176,9 +175,12 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	// 9. Determine parallel count
 	parallelCount := config.DetermineParallelCount(cfg.Defaults.Parallel, opts.Parallel)
 
-	// 9a. Prompt for missing credentials (only for SSH targets, not record mode).
-	//     Check each target after full config resolution; prompt once if any are missing.
-	fallbackPassword, fallbackSecret := promptMissingCredentials(targets, cfg.Defaults, opts.Password, opts.Secret, opts.LogDir, opts.Suffix, opts.FilenameFormat, opts.TimestampFormat)
+	// 9a. Resolve named credentials before starting parallel host work. Shared
+	// prompt providers are therefore requested once per retri invocation.
+	resolvedCredentials, err := resolveTargetCredentials(targets, cfg, opts)
+	if err != nil {
+		log.Fatalf("[ERROR] Failed to resolve credentials: %v", err)
+	}
 
 	// 10. Main execution loop (parallel)
 	log.Printf("Starting tasks for %d hosts (Parallel: %d)...", len(targets), parallelCount)
@@ -186,73 +188,36 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, parallelCount)
 
-	for _, target := range targets {
+	for i, target := range targets {
 		wg.Add(1)
-		go func(rh config.ResolvedHost) {
+		auth := resolvedCredentials[i]
+		go func(rh config.ResolvedHost, auth resolvedHostCredentials) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			executor.ExecuteHostTask(rh, cfg.Defaults, executor.HostTaskOptions{
-				Command:          opts.Command,
-				CommandFile:      opts.CommandFile,
-				Password:         opts.Password,
-				Secret:           opts.Secret,
-				LogDir:           opts.LogDir,
-				Suffix:           opts.Suffix,
-				FilenameFormat:   opts.FilenameFormat,
-				TimestampFormat:  opts.TimestampFormat,
-				LogEncoding:      opts.LogEncoding,
-				ExitCommand:      opts.ExitCommand,
-				FallbackPassword: fallbackPassword,
-				FallbackSecret:   fallbackSecret,
-				NoTimestamp:      opts.NoTimestamp,
-				Debug:            opts.Debug,
+				Command:                opts.Command,
+				CommandFile:            opts.CommandFile,
+				Password:               opts.Password,
+				Secret:                 opts.Secret,
+				ResolvedPassword:       auth.Password,
+				ResolvedSecret:         auth.Secret,
+				UseResolvedCredentials: true,
+				LogDir:                 opts.LogDir,
+				Suffix:                 opts.Suffix,
+				FilenameFormat:         opts.FilenameFormat,
+				TimestampFormat:        opts.TimestampFormat,
+				LogEncoding:            opts.LogEncoding,
+				ExitCommand:            opts.ExitCommand,
+				NoTimestamp:            opts.NoTimestamp,
+				Debug:                  opts.Debug,
 			})
-		}(target)
+		}(target, auth)
 	}
 
 	wg.Wait()
 	log.Println("All tasks finished.")
-}
-
-// promptMissingCredentials checks resolved settings for each target and prompts
-// the user (hidden input) for any credential that is missing across all targets.
-// Returns fallback values to be applied only to hosts that have no credential set.
-func promptMissingCredentials(targets []config.ResolvedHost, defaults config.GlobalOptions, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat string) (fallbackPassword, fallbackSecret string) {
-	var missingPasswordHosts, missingSecretHosts []string
-
-	for _, rh := range targets {
-		_, pw, sec, _, _, _, _, _ := config.ResolveSettings(rh, defaults, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat)
-		if pw == "" {
-			missingPasswordHosts = append(missingPasswordHosts, rh.HostConfig.Host)
-		}
-		if sec == "" {
-			missingSecretHosts = append(missingSecretHosts, rh.HostConfig.Host)
-		}
-	}
-
-	if len(missingPasswordHosts) > 0 {
-		fmt.Fprintf(os.Stderr, "[INFO] SSH password not set for: %s\n", strings.Join(missingPasswordHosts, ", "))
-		fmt.Fprint(os.Stderr, "SSH Password (leave blank to skip): ")
-		b, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
-		if err == nil {
-			fallbackPassword = string(b)
-		}
-	}
-
-	if len(missingSecretHosts) > 0 {
-		fmt.Fprintf(os.Stderr, "[INFO] Sudo secret not set for: %s\n", strings.Join(missingSecretHosts, ", "))
-		fmt.Fprint(os.Stderr, "Sudo Secret (leave blank to skip): ")
-		b, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
-		if err == nil {
-			fallbackSecret = string(b)
-		}
-	}
-
-	return
 }
 
 // runSSHRecordMode SSHes to host and records the interactive session to a log file.
