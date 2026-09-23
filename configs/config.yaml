@@ -1,11 +1,32 @@
 # Retri Configuration File
 #
 # Run "retri -C" to view all available options, priorities, and examples.
+#
+# Named credentials are optional. They let multiple hosts share one credential
+# source without putting the secret itself in this file.
+#
+# credentials:
+#   linux-sudo:
+#     provider: prompt
+#     prompt: "Linux sudo password"
+#     cache:
+#       backend: session-keyring
+#       ttl: 8h
+#
+#   network-login:
+#     provider: bitwarden
+#     ref: "BITWARDEN-ITEM-ID"
+#     field: password
+#     cache:
+#       backend: session-keyring
+#       ttl: 8h
 
 defaults:
   # user: "admin"
-  # password: "${COMMON_PASSWORD}"
+  # password: "${COMMON_PASSWORD}"           # legacy/literal form remains supported
+  # password_credential: "network-login"     # named credential alternative
   # secret: "${SUDO_PASSWORD}"
+  # secret_credential: "linux-sudo"
   # parallel: auto
   # command: "df -h"
   # commands: ["df -h", "uptime"]
@@ -27,7 +48,7 @@ defaults:
 #     prompt_regex: "[#>] ?$"
 #     setup_commands:
 #       - "terminal length 0"
-#     # password: "cisco_password"
+#     # password_credential: "network-login"
 #
 #   arista_eos:
 #     prompt_regex: "[#>$] ?$"
