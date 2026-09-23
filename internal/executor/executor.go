@@ -10,39 +10,46 @@ import (
 	"github.com/cotta-dev/retri/internal/logger"
 )
 
-// HostTaskOptions contains CLI overrides and runtime credential fallbacks for
-// one automated host execution.
+// HostTaskOptions contains CLI overrides and runtime credentials for one
+// automated host execution.
 type HostTaskOptions struct {
-	Command          string
-	CommandFile      string
-	Password         string
-	Secret           string
-	LogDir           string
-	Suffix           string
-	FilenameFormat   string
-	TimestampFormat  string
-	LogEncoding      string
-	ExitCommand      string
-	FallbackPassword string
-	FallbackSecret   string
-	NoTimestamp      bool
-	Debug            bool
+	Command                string
+	CommandFile            string
+	Password               string
+	Secret                 string
+	ResolvedPassword       string
+	ResolvedSecret         string
+	UseResolvedCredentials bool
+	LogDir                 string
+	Suffix                 string
+	FilenameFormat         string
+	TimestampFormat        string
+	LogEncoding            string
+	ExitCommand            string
+	FallbackPassword       string
+	FallbackSecret         string
+	NoTimestamp            bool
+	Debug                  bool
 }
 
 // ExecuteHostTask runs the full command execution workflow for a single host.
-// Credential fallbacks apply only when the resolved config/env/CLI value is empty.
 func ExecuteHostTask(rh config.ResolvedHost, defaults config.GlobalOptions, options HostTaskOptions) {
-	// 1. Resolve settings through the priority chain
+	// 1. Resolve settings through the priority chain.
 	user, password, secret, logDir, suffix, filenameFormat, timestampFormat, promptTimeout :=
 		config.ResolveSettings(rh, defaults, options.Password, options.Secret, options.LogDir, options.Suffix, options.FilenameFormat, options.TimestampFormat)
 	logEncoding := config.ResolveLogEncoding(rh, defaults, options.LogEncoding)
 
-	// Apply fallbacks only for hosts that have no password/secret configured.
-	if password == "" && options.FallbackPassword != "" {
-		password = options.FallbackPassword
-	}
-	if secret == "" && options.FallbackSecret != "" {
-		secret = options.FallbackSecret
+	if options.UseResolvedCredentials {
+		password = options.ResolvedPassword
+		secret = options.ResolvedSecret
+	} else {
+		// Backward-compatible fallback path for callers that do not pre-resolve credentials.
+		if password == "" && options.FallbackPassword != "" {
+			password = options.FallbackPassword
+		}
+		if secret == "" && options.FallbackSecret != "" {
+			secret = options.FallbackSecret
+		}
 	}
 
 	// 2. Collect commands from all layers
