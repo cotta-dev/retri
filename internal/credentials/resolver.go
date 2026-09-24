@@ -179,12 +179,12 @@ func (r *Resolver) readBitwarden(spec config.CredentialSpec) (string, error) {
 	switch strings.ToLower(field) {
 	case "password":
 		if item.Login == nil {
-			return "", fmt.Errorf("Bitwarden item has no login password")
+			return "", fmt.Errorf("bitwarden item has no login password")
 		}
 		return item.Login.Password, nil
 	case "username":
 		if item.Login == nil {
-			return "", fmt.Errorf("Bitwarden item has no login username")
+			return "", fmt.Errorf("bitwarden item has no login username")
 		}
 		return item.Login.Username, nil
 	default:
@@ -193,7 +193,7 @@ func (r *Resolver) readBitwarden(spec config.CredentialSpec) (string, error) {
 				return f.Value, nil
 			}
 		}
-		return "", fmt.Errorf("Bitwarden item field %q was not found", field)
+		return "", fmt.Errorf("bitwarden item field %q was not found", field)
 	}
 }
 
