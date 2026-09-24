@@ -2,8 +2,7 @@ package credentials
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -252,7 +251,7 @@ func (r *Resolver) readKeyring(description string) (string, bool, error) {
 		return "", false, fmt.Errorf("keyring provider is supported only on Linux")
 	}
 	if _, err := exec.LookPath("keyctl"); err != nil {
-		return "", false, fmt.Errorf("Linux keyring support requires the 'keyctl' command")
+		return "", false, fmt.Errorf("linux keyring support requires the 'keyctl' command")
 	}
 
 	out, err := r.run("keyctl", []string{"search", "@s", "user", description}, nil)
@@ -271,6 +270,14 @@ func (r *Resolver) readKeyring(description string) (string, bool, error) {
 }
 
 func cacheDescription(name string, spec config.CredentialSpec) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{name, spec.Provider, spec.Ref, spec.Field}, "\x00")))
-	return "retri:credential:" + hex.EncodeToString(sum[:12])
+	// This is an opaque, deterministic keyring description, not a password hash.
+	// Quote each component before joining so the encoding is unambiguous without
+	// using a cryptographic primitive on credential-related metadata.
+	identity := strings.Join([]string{
+		strconv.Quote(name),
+		strconv.Quote(spec.Provider),
+		strconv.Quote(spec.Ref),
+		strconv.Quote(spec.Field),
+	}, "\x00")
+	return "retri:credential:" + base64.RawURLEncoding.EncodeToString([]byte(identity))
 }
