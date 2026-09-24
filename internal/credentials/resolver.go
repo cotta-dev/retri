@@ -60,7 +60,7 @@ func (r *Resolver) Resolve(name string) (string, error) {
 	}
 
 	if strings.EqualFold(strings.TrimSpace(spec.Cache.Backend), "session-keyring") {
-		value, found, err := r.readSessionCache(name, spec)
+		value, found, err := r.readSessionCache(name)
 		if err != nil {
 			return "", err
 		}
@@ -196,8 +196,8 @@ func (r *Resolver) readBitwarden(spec config.CredentialSpec) (string, error) {
 	}
 }
 
-func (r *Resolver) readSessionCache(name string, spec config.CredentialSpec) (string, bool, error) {
-	return r.readKeyring(cacheDescription(name, spec))
+func (r *Resolver) readSessionCache(name string) (string, bool, error) {
+	return r.readKeyring(cacheDescription(name))
 }
 
 func (r *Resolver) writeSessionCache(name string, spec config.CredentialSpec, value string) error {
@@ -208,7 +208,7 @@ func (r *Resolver) writeSessionCache(name string, spec config.CredentialSpec, va
 		return fmt.Errorf("credential %q: session-keyring cache requires the 'keyctl' command", name)
 	}
 
-	description := cacheDescription(name, spec)
+	description := cacheDescription(name)
 	var keyID string
 	if out, err := r.run("keyctl", []string{"search", "@s", "user", description}, nil); err == nil {
 		keyID = strings.TrimSpace(string(out))
@@ -269,15 +269,9 @@ func (r *Resolver) readKeyring(description string) (string, bool, error) {
 	return string(payload), true, nil
 }
 
-func cacheDescription(name string, spec config.CredentialSpec) string {
-	// This is an opaque, deterministic keyring description, not a password hash.
-	// Quote each component before joining so the encoding is unambiguous without
-	// using a cryptographic primitive on credential-related metadata.
-	identity := strings.Join([]string{
-		strconv.Quote(name),
-		strconv.Quote(spec.Provider),
-		strconv.Quote(spec.Ref),
-		strconv.Quote(spec.Field),
-	}, "\x00")
-	return "retri:credential:" + base64.RawURLEncoding.EncodeToString([]byte(identity))
+func cacheDescription(name string) string {
+	// Credential names are configuration identifiers, not secret material. The
+	// provider reference and field are deliberately excluded so keyring metadata
+	// does not reveal Bitwarden item IDs, environment variable names, or fields.
+	return "retri:credential:" + base64.RawURLEncoding.EncodeToString([]byte(name))
 }
