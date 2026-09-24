@@ -3,6 +3,7 @@ package credentials
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cotta-dev/retri/internal/config"
@@ -100,5 +101,17 @@ func TestResolveBitwardenPasswordAndCustomField(t *testing.T) {
 	want := [][]string{{"get", "item", "item-id"}, {"get", "item", "item-id"}}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("calls = %#v, want %#v", calls, want)
+	}
+}
+
+func TestCacheDescriptionDoesNotExposeProviderMetadata(t *testing.T) {
+	description := cacheDescription("network-login")
+	for _, sensitiveMetadata := range []string{"bitwarden", "item-id", "password", "BW_SESSION"} {
+		if strings.Contains(description, sensitiveMetadata) {
+			t.Fatalf("cache description %q exposed %q", description, sensitiveMetadata)
+		}
+	}
+	if !strings.HasPrefix(description, "retri:credential:") {
+		t.Fatalf("cache description = %q", description)
 	}
 }
