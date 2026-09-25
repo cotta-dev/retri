@@ -1,12 +1,13 @@
 # Retri Config Reference
 #
 # Priority chain (low → high):
-#   defaults < groups < device_types < hosts < env fallback < CLI flags
+#   defaults < groups < device_types < hosts < CLI flags
+# RETRI_SSH_PASSWORD / RETRI_SSH_SECRET apply only when config is unset.
 #
 # Commands are AGGREGATED across all layers (not overridden).
-# suffix / filename_format / timestamp_format are only read from defaults (+ CLI).
+# suffix is read from defaults / groups (+ CLI); filename/timestamp format from defaults (+ CLI).
 #
-# ${VAR} in string values is expanded from environment variables at runtime.
+# ${VAR} in legacy password/secret and literal credential value is expanded from environment variables at runtime.
 #
 # Legend:
 #   [required] must be specified
@@ -25,16 +26,18 @@
 #   prompt     hidden terminal prompt (one prompt per named credential per run)
 #   env        environment variable named by ref
 #   literal    value from value (mainly for migration/testing; plaintext is discouraged)
-#   keyring    existing Linux session keyring user key named by ref (requires keyctl)
+#   keyring    existing Linux session keyring user key named by ref (native Linux API)
 #   bitwarden  Bitwarden CLI item named by ref; works with Bitwarden or Vaultwarden
 #              depending on `bw config server` (requires bw and an unlocked vault)
 #
 # Optional cache backend:
 #   none             default; only the in-process cache is used
-#   session-keyring  Linux session keyring cache (requires keyctl). The cached
+#   session-keyring  Linux session keyring cache (native Linux API). The cached
 #                    value can survive multiple retri invocations in the same
 #                    login session and can be used while the upstream provider
-#                    is unavailable. Default TTL: 8h when ttl is omitted.
+#                    is unavailable. Default TTL: 8h; allowed 1s..24h. TTL limits reuse by later runs.
+# Cache errors fail explicitly; no provider fallback. See docs/credentials.md
+# for profile binding, refresh/clear, permissions and snapshot semantics.
 # ===========================================================================
 credentials:
   linux-sudo:
@@ -46,6 +49,8 @@ credentials:
 
   network-login:
     provider: bitwarden
+    server: https://vault.bitwarden.com  # must match bw status serverUrl
+    account: "BITWARDEN-USER-ID"          # bw status userId (not email)
     ref: "BITWARDEN-ITEM-ID"            # [required for bitwarden]
     field: password                      # [optional] password (default), username, or custom field name
     cache:
@@ -66,10 +71,10 @@ credentials:
 defaults:
   # --- CommonFields (shared with device_types / groups / hosts) ---
   user: ""                  # [optional] default: current OS user (passed to ssh as-is)
-  password: ""              # [optional] default: none — legacy/literal SSH password. Prefer key auth, ${VAR}, or password_credential
-  password_credential: ""   # [optional] named credential for SSH password; mutually exclusive with password in the same section
-  secret: ""                # [optional] default: none — legacy/literal sudo / enable secret
-  secret_credential: ""     # [optional] named credential for sudo / enable; mutually exclusive with secret in the same section
+  password: ""              # [optional] default: none  — SSH password. Prefer ${VAR} or key auth
+  password_credential: "" # [optional] named credential; exclusive with password in this layer
+  secret: ""                # [optional] default: none  — sudo / enable secret. Prefer ${VAR}
+  secret_credential: ""   # [optional] named credential; exclusive with secret in this layer
   command: ""               # [optional] default: none  — single command (ignored if commands is set)
   commands: []              # [optional] default: []    — list of commands to run
   command_file: ""          # [optional] default: none  — path to file with commands (one per line)
@@ -93,70 +98,73 @@ defaults:
 
 # ===========================================================================
 # device_types — reusable profiles for interactive (PTY) devices
+#                applied after defaults / groups, before hosts
 # ===========================================================================
 device_types:
-  my_device:
+  my_device:            # key name — referenced via device_type in defaults / groups / hosts
     # --- CommonFields ---
-    user: ""
-    password: ""
-    password_credential: ""
-    secret: ""
-    secret_credential: ""
-    command: ""
-    commands: []
-    command_file: ""
-    log_dir: ""
-    log_encoding: ""
-    prompt_timeout: 0
+    user: ""            # [optional] default: none
+    password: ""        # [optional] default: none
+    password_credential: "" # [optional] named credential; exclusive with password in this layer
+    secret: ""          # [optional] default: none
+    secret_credential: ""   # [optional] named credential; exclusive with secret in this layer
+    command: ""         # [optional] default: none
+    commands: []        # [optional] default: []
+    command_file: ""    # [optional] default: none
+    log_dir: ""         # [optional] default: inherit from defaults
+    log_encoding: ""    # [optional] default: inherit from defaults
+    prompt_timeout: 0   # [optional] default: inherit from defaults (0 = inherit)
 
     # --- device_types-only fields ---
-    prompt_regex: "[#>] ?$"
-    setup_commands: []
-    exit_command: "exit"
+    prompt_regex: "[#>] ?$"    # [optional] default: [#>] ?$  — regex to detect CLI prompt
+    setup_commands: []         # [optional] default: []       — sent once at session start
+    exit_command: "exit"       # [optional] default: exit     — command to close the session
 
 # ===========================================================================
 # groups — apply shared settings to multiple hosts
+#          applied after defaults, before device_types and hosts
 # ===========================================================================
 groups:
-  - name: "my_group"
+  - name: "my_group"    # [required] — referenced via groups: [...] in hosts, or -g CLI flag
 
     # --- CommonFields ---
-    user: ""
-    password: ""
-    password_credential: ""
-    secret: ""
-    secret_credential: ""
-    command: ""
-    commands: []
-    command_file: ""
-    log_dir: ""
-    log_encoding: ""
-    prompt_timeout: 0
+    user: ""            # [optional] default: none
+    password: ""        # [optional] default: none
+    password_credential: "" # [optional] named credential; exclusive with password in this layer
+    secret: ""          # [optional] default: none
+    secret_credential: ""   # [optional] named credential; exclusive with secret in this layer
+    command: ""         # [optional] default: none
+    commands: []        # [optional] default: []
+    command_file: ""    # [optional] default: none
+    log_dir: ""         # [optional] default: inherit from defaults
+    log_encoding: ""    # [optional] default: inherit from defaults
+    prompt_timeout: 0   # [optional] default: inherit from defaults (0 = inherit)
 
     # --- groups-only fields ---
-    device_type: ""
-    suffix: ""
-    hosts: []
+    device_type: ""     # [optional] default: none — override device_type for hosts in this group
+    suffix: ""          # [optional] default: none — overrides defaults.suffix for this group's logs
+    hosts: []           # [optional] default: []   — hostnames / ranges (e.g. "sw-[01-03]") in this group
 
 # ===========================================================================
 # hosts — individual host definitions (highest config priority)
 # ===========================================================================
 hosts:
-  - host: "myhost"
+  - host: "myhost"      # [required] — hostname, IP, or SSH config alias.
+                        #   Range syntax: "sw-[01-03]" expands to sw-01, sw-02, sw-03
 
     # --- CommonFields ---
-    user: ""
-    password: ""
-    password_credential: ""
-    secret: ""
-    secret_credential: ""
-    command: ""
-    commands: []
-    command_file: ""
-    log_dir: ""
-    log_encoding: ""
-    prompt_timeout: 0
+    user: ""            # [optional] default: none
+    password: ""        # [optional] default: none
+    password_credential: "" # [optional] named credential; exclusive with password in this layer
+    secret: ""          # [optional] default: none
+    secret_credential: ""   # [optional] named credential; exclusive with secret in this layer
+    command: ""         # [optional] default: none
+    commands: []        # [optional] default: []
+    command_file: ""    # [optional] default: none
+    log_dir: ""         # [optional] default: inherit from defaults
+    log_encoding: ""    # [optional] default: inherit from defaults
+    prompt_timeout: 0   # [optional] default: inherit from defaults (0 = inherit)
 
     # --- hosts-only fields ---
-    device_type: ""
-    groups: []
+    device_type: ""     # [optional] default: none — override device_type for this host
+    groups: []          # [optional] default: []   — group names this host belongs to

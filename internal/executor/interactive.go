@@ -20,7 +20,7 @@ import (
 // Linux shells and network CLIs both use a "wait for prompt -> send command"
 // interaction pattern so the log can retain the terminal prompt, command echo,
 // and output as one chronological transcript.
-func RunInteractive(host, user string, commands []string, tw *logger.LineLogger, w io.Writer, password, secret, promptRegex, exitCommand string, timeout time.Duration, debug bool) bool {
+func RunInteractive(host, user string, commands []string, tw *logger.LineLogger, w io.Writer, password, secret, promptRegex, exitCommand string, timeout time.Duration, debug bool, env ...[]string) bool {
 	destination := host
 	if user != "" {
 		destination = user + "@" + host
@@ -29,7 +29,7 @@ func RunInteractive(host, user string, commands []string, tw *logger.LineLogger,
 	// Force TTY allocation with -t. Do not pass known secret-bearing variables
 	// to the SSH child; credentials are written to the PTY only when prompted.
 	c := exec.Command("ssh", "-t", "--", destination)
-	c.Env = append(sanitizedEnvironment(os.Environ()), "TERM=dumb")
+	c.Env = append(childEnvironment(env), "TERM=dumb")
 
 	// Start PTY (pseudo-terminal)
 	ptmx, err := pty.StartWithSize(c, &pty.Winsize{
@@ -230,6 +230,8 @@ func validateInteractiveExit(waitErr error, exitSent bool) error {
 // 3. Command prompt detection (e.g., "#") -> notification via promptCh
 func handlePrompts(r io.Reader, w io.Writer, password, secret, promptRegex string, promptCh chan struct{}, expectEchoCh chan string, doneCh chan<- error, debug bool) {
 	defer close(doneCh)
+	safeLog := logger.NewSecretWriter(w, password, secret)
+	safeDebug := logger.NewSecretWriter(os.Stdout, password, secret)
 
 	var re *regexp.Regexp
 	if promptRegex != "" {
@@ -249,6 +251,8 @@ func handlePrompts(r io.Reader, w io.Writer, password, secret, promptRegex strin
 	buf := make([]byte, config.ReadBufferSize)
 	var lineBuffer []byte
 	var expectedEcho string
+	var activeCommand string
+	var authenticated bool
 	var promptFamily string
 
 	for {
@@ -257,19 +261,20 @@ func handlePrompts(r io.Reader, w io.Writer, password, secret, promptRegex strin
 			data := buf[:n]
 
 			// Write output to log
-			if _, writeErr := w.Write(data); writeErr != nil {
+			if _, writeErr := safeLog.Write(data); writeErr != nil {
 				doneCh <- fmt.Errorf("write session log: %w", writeErr)
 				return
 			}
 
 			if debug {
-				_, _ = os.Stdout.Write(data)
+				_, _ = safeDebug.Write(data)
 			}
 
 			// Check for expected echo-back command
 			select {
 			case cmd := <-expectEchoCh:
 				expectedEcho = strings.TrimSpace(cmd)
+				activeCommand = expectedEcho
 			default:
 			}
 
@@ -294,7 +299,9 @@ func handlePrompts(r io.Reader, w io.Writer, password, secret, promptRegex strin
 			if pwdRe.MatchString(lastLineTrimmed) {
 				toSend := password
 				// Detect sudo password prompts
-				if strings.Contains(strings.ToLower(lastLineTrimmed), "sudo") || strings.Contains(strings.ToLower(lastLineTrimmed), "password for") {
+				if strings.Contains(strings.ToLower(lastLineTrimmed), "sudo") || strings.HasPrefix(activeCommand, "sudo ") || activeCommand == "sudo" || activeCommand == "enable" || strings.HasPrefix(activeCommand, "enable ") || (authenticated && strings.Contains(strings.ToLower(lastLineTrimmed), "password for")) {
+					// Preserve legacy behavior when no elevation secret was supplied.
+					// Explicit named providers cannot resolve to an empty value.
 					if secret != "" {
 						toSend = secret
 					}
@@ -306,7 +313,7 @@ func handlePrompts(r io.Reader, w io.Writer, password, secret, promptRegex strin
 						return
 					}
 					if debug {
-						log.Printf("[DEBUG] Password sent triggered by: %s", lastLineTrimmed)
+						log.Printf("[DEBUG] Credential response sent")
 					}
 				}
 			} else if strings.Contains(strings.ToLower(lastLineTrimmed), "are you sure you want to continue") {
@@ -339,13 +346,14 @@ func handlePrompts(r io.Reader, w io.Writer, password, secret, promptRegex strin
 						candidateFamily := terminalPromptFamily(lastLine)
 						if promptFamily != "" && candidateFamily != promptFamily {
 							if debug {
-								log.Printf("[DEBUG] Ignoring prompt-like output %q (expected family %q)", lastLine, promptFamily)
+								log.Printf("[DEBUG] Ignoring output from a different prompt family")
 							}
 							continue
 						}
 						if promptFamily == "" {
 							promptFamily = candidateFamily
 						}
+						authenticated = true
 						select {
 						case promptCh <- struct{}{}:
 							lineBuffer = nil
@@ -358,6 +366,13 @@ func handlePrompts(r io.Reader, w io.Writer, password, secret, promptRegex strin
 		if err != nil {
 			break
 		}
+	}
+	if err := safeLog.Flush(); err != nil {
+		doneCh <- fmt.Errorf("flush session log: %w", err)
+		return
+	}
+	if debug {
+		_ = safeDebug.Flush()
 	}
 	doneCh <- nil
 }

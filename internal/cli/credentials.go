@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/term"
@@ -18,8 +19,12 @@ type resolvedHostCredentials struct {
 
 func resolveTargetCredentials(targets []config.ResolvedHost, cfg config.Config, opts Options) ([]resolvedHostCredentials, error) {
 	resolver := credentialresolver.NewResolver(cfg.Credentials)
+	defer resolver.Close()
+	resolver.Configure(credentialNamespace(opts.ConfigFile), opts.CredentialCacheRefresh, credentialresolver.ChildEnvironment(cfg, os.Environ(), true))
 	resolved := make([]resolvedHostCredentials, len(targets))
 	var missingPasswordHosts, missingSecretHosts []string
+	missingPassword := make([]bool, len(targets))
+	missingSecret := make([]bool, len(targets))
 
 	for i, rh := range targets {
 		passwordSource, secretSource := config.ResolveCredentialSources(rh, cfg.Defaults, opts.Password, opts.Secret)
@@ -34,9 +39,11 @@ func resolveTargetCredentials(targets []config.ResolvedHost, cfg config.Config, 
 		}
 
 		if !passwordSet {
+			missingPassword[i] = true
 			missingPasswordHosts = append(missingPasswordHosts, rh.HostConfig.Host)
 		}
 		if !secretSet {
+			missingSecret[i] = true
 			missingSecretHosts = append(missingSecretHosts, rh.HostConfig.Host)
 		}
 		resolved[i] = resolvedHostCredentials{Password: password, Secret: secret}
@@ -51,13 +58,12 @@ func resolveTargetCredentials(targets []config.ResolvedHost, cfg config.Config, 
 		return nil, err
 	}
 
-	for i, rh := range targets {
+	for i := range targets {
 		value := resolved[i]
-		passwordSource, secretSource := config.ResolveCredentialSources(rh, cfg.Defaults, opts.Password, opts.Secret)
-		if !passwordSource.Set {
+		if missingPassword[i] {
 			value.Password = fallbackPassword
 		}
-		if !secretSource.Set {
+		if missingSecret[i] {
 			value.Secret = fallbackSecret
 		}
 		resolved[i] = value
@@ -77,15 +83,34 @@ func resolveCredentialSource(source config.CredentialSource, resolver *credentia
 }
 
 func promptFallbackCredential(label string, hosts []string) (string, error) {
-	if len(hosts) == 0 {
+	if len(hosts) == 0 || !term.IsTerminal(int(os.Stdin.Fd())) {
 		return "", nil
 	}
 	fmt.Fprintf(os.Stderr, "[INFO] %s not set for: %s\n", label, strings.Join(hosts, ", "))
 	fmt.Fprintf(os.Stderr, "%s (leave blank to skip): ", label)
 	b, err := term.ReadPassword(int(os.Stdin.Fd()))
+	defer clear(b)
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", strings.ToLower(label), err)
 	}
 	return string(b), nil
+}
+
+func credentialNamespace(path string) string {
+	if path == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		path = filepath.Join(home, ".config", config.AppName, "config.yaml")
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return ""
+	}
+	if canonical, err := filepath.EvalSymlinks(absolute); err == nil {
+		return canonical
+	}
+	return absolute
 }

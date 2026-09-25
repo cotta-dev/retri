@@ -174,6 +174,10 @@ See [docs/config-reference.yaml](docs/config-reference.yaml) for the complete pa
 
 ### Environment Variables & Security
 
+Optional [named credential sources and session caching](docs/credentials.md)
+support shared prompts, environment variables, Linux keyrings, and Bitwarden/Vaultwarden.
+Bitwarden and Linux keyrings are not required for ordinary use.
+
 Avoid hardcoding passwords in the config file. Retri supports `${VAR}` expansion:
 
 ```bash

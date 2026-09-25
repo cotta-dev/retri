@@ -12,6 +12,7 @@ import (
 	"github.com/jessevdk/go-flags"
 
 	"github.com/cotta-dev/retri/internal/config"
+	"github.com/cotta-dev/retri/internal/credentials"
 	"github.com/cotta-dev/retri/internal/executor"
 	"github.com/cotta-dev/retri/internal/logencoding"
 	"github.com/cotta-dev/retri/internal/logger"
@@ -44,9 +45,11 @@ type Options struct {
 	NoTimestamp bool `short:"T" long:"no-timestamp" description:"Disable timestamp logging"`
 
 	// Authentication (also available via RETRI_SSH_PASSWORD / RETRI_SSH_SECRET)
-	Password    string `short:"p" long:"password" description:"SSH password literal override; command-line values may be visible to other processes"`
-	Secret      string `short:"s" long:"secret" description:"Sudo/enable secret literal override; command-line values may be visible to other processes"`
-	ExitCommand string `short:"e" long:"exit-command" description:"Exit command for interactive sessions (default: exit)"`
+	Password               string `short:"p" long:"password" description:"SSH password literal override; command-line values may be visible to other processes"`
+	Secret                 string `short:"s" long:"secret" description:"Sudo/enable secret literal override; command-line values may be visible to other processes"`
+	ExitCommand            string `short:"e" long:"exit-command" description:"Exit command for interactive sessions (default: exit)"`
+	CredentialCacheRefresh bool   `long:"credential-cache-refresh" description:"Discard selected credential caches and obtain fresh values from their configured sources"`
+	CredentialCacheClear   bool   `long:"credential-cache-clear" description:"Clear this config's current credential cache entries and exit"`
 
 	// Misc
 	Completion string `long:"completion" choice:"bash" choice:"zsh" choice:"fish" description:"Generate shell completion script (bash, zsh, or fish)"`
@@ -141,6 +144,18 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	if _, err := logencoding.Lookup(opts.LogEncoding); err != nil {
 		log.Fatalf("[ERROR] Invalid --log-encoding: %v", err)
 	}
+	if opts.CredentialCacheClear {
+		r := credentials.NewResolver(cfg.Credentials)
+		r.Configure(credentialNamespace(opts.ConfigFile), false, credentials.ChildEnvironment(cfg, os.Environ(), true))
+		err := r.Clear()
+		r.Close()
+		if err != nil {
+			log.Fatalf("[ERROR] Failed to clear credential cache: %v", err)
+		}
+		fmt.Println("Credential cache cleared for current definitions.")
+		return
+	}
+	childEnv := credentials.ChildEnvironment(cfg, os.Environ(), false)
 
 	// 5. Check for a newer release once per day when enabled.
 	updateCheckEnabled := cfg.Defaults.UpdateCheck == nil || *cfg.Defaults.UpdateCheck
@@ -153,10 +168,10 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	if opts.Host == "" && opts.Group == "" && opts.Command == "" && opts.CommandFile == "" {
 		if len(remaining) == 1 {
 			// retri <hostname> → SSH to host and record session
-			runSSHRecordMode(opts, remaining[0], cfg.Defaults)
+			runSSHRecordMode(opts, remaining[0], cfg.Defaults, childEnv)
 		} else {
 			// retri (no args) → record local shell session
-			runRecordMode(opts, cfg.Defaults)
+			runRecordMode(opts, cfg.Defaults, childEnv)
 		}
 		return
 	}
@@ -173,6 +188,22 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	}
 
 	// 9. Determine parallel count
+	// Plan commands before acquiring secrets; skipped hosts need no providers.
+	var runnable []config.ResolvedHost
+	var plannedCommands [][]string
+	for _, target := range targets {
+		commands := executor.CollectCommands(target, cfg.Defaults, opts.CommandFile, opts.Command)
+		if target.HostConfig.Host == "" || len(commands) == 0 {
+			log.Printf("[%s] Skip: Missing host or commands", target.HostConfig.Host)
+			continue
+		}
+		runnable = append(runnable, target)
+		plannedCommands = append(plannedCommands, commands)
+	}
+	targets = runnable
+	if len(targets) == 0 {
+		return
+	}
 	parallelCount := config.DetermineParallelCount(cfg.Defaults.Parallel, opts.Parallel)
 
 	// 9a. Resolve named credentials before starting parallel host work. Shared
@@ -181,6 +212,7 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	if err != nil {
 		log.Fatalf("[ERROR] Failed to resolve credentials: %v", err)
 	}
+	defer clear(resolvedCredentials)
 
 	// 10. Main execution loop (parallel)
 	log.Printf("Starting tasks for %d hosts (Parallel: %d)...", len(targets), parallelCount)
@@ -197,21 +229,20 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 			defer func() { <-sem }()
 
 			executor.ExecuteHostTask(rh, cfg.Defaults, executor.HostTaskOptions{
-				Command:                opts.Command,
-				CommandFile:            opts.CommandFile,
-				Password:               opts.Password,
-				Secret:                 opts.Secret,
-				ResolvedPassword:       auth.Password,
-				ResolvedSecret:         auth.Secret,
-				UseResolvedCredentials: true,
-				LogDir:                 opts.LogDir,
-				Suffix:                 opts.Suffix,
-				FilenameFormat:         opts.FilenameFormat,
-				TimestampFormat:        opts.TimestampFormat,
-				LogEncoding:            opts.LogEncoding,
-				ExitCommand:            opts.ExitCommand,
-				NoTimestamp:            opts.NoTimestamp,
-				Debug:                  opts.Debug,
+				Commands:        plannedCommands[i],
+				Command:         opts.Command,
+				CommandFile:     opts.CommandFile,
+				Password:        auth.Password,
+				Secret:          auth.Secret,
+				Environment:     childEnv,
+				LogDir:          opts.LogDir,
+				Suffix:          opts.Suffix,
+				FilenameFormat:  opts.FilenameFormat,
+				TimestampFormat: opts.TimestampFormat,
+				LogEncoding:     opts.LogEncoding,
+				ExitCommand:     opts.ExitCommand,
+				NoTimestamp:     opts.NoTimestamp,
+				Debug:           opts.Debug,
 			})
 		}(target, auth)
 	}
@@ -221,7 +252,7 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 }
 
 // runSSHRecordMode SSHes to host and records the interactive session to a log file.
-func runSSHRecordMode(opts Options, host string, defaults config.GlobalOptions) {
+func runSSHRecordMode(opts Options, host string, defaults config.GlobalOptions, env []string) {
 	lg, logFile, logPath, err := logger.Setup(host, sessionLogOptions(opts, defaults))
 	if err != nil {
 		log.Fatalf("[ERROR] Failed to setup logger: %v", err)
@@ -249,7 +280,7 @@ func runSSHRecordMode(opts Options, host string, defaults config.GlobalOptions) 
 	if commandsOnly {
 		log.Printf("Command/output-only logging enabled.")
 	}
-	if err := executor.RunSSHRecordSession(host, "", lg, commandsOnly, opts.Debug); err != nil {
+	if err := executor.RunSSHRecordSession(host, "", lg, commandsOnly, opts.Debug, env); err != nil {
 		log.Printf("[ERROR] SSH session error: %v", err)
 	}
 
@@ -266,7 +297,7 @@ func runSSHRecordMode(opts Options, host string, defaults config.GlobalOptions) 
 }
 
 // runRecordMode starts a local shell session recording.
-func runRecordMode(opts Options, defaults config.GlobalOptions) {
+func runRecordMode(opts Options, defaults config.GlobalOptions, env []string) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "localhost"
@@ -301,7 +332,7 @@ func runRecordMode(opts Options, defaults config.GlobalOptions) {
 	if commandsOnly {
 		log.Printf("Command/output-only logging enabled.")
 	}
-	if err := executor.RunRecordSession(lg, commandsOnly, opts.Debug); err != nil {
+	if err := executor.RunRecordSession(lg, commandsOnly, opts.Debug, env); err != nil {
 		log.Printf("[ERROR] Record session error: %v", err)
 	}
 

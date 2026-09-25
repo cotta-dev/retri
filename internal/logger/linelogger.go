@@ -474,6 +474,11 @@ func (l *LineLogger) Flush() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.flushPendingLine()
+	if w, ok := l.w.(*SecretWriter); ok {
+		if err := w.Flush(); l.writeErr == nil {
+			l.writeErr = err
+		}
+	}
 }
 
 // Err returns the first log write error. Errors are sticky so callers can

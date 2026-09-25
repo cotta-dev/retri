@@ -36,6 +36,8 @@ type optionCompletion struct {
 }
 
 var completionOptions = []optionCompletion{
+	{Long: "--credential-cache-refresh", Description: "Refresh selected credential caches from their configured sources"},
+	{Long: "--credential-cache-clear", Description: "Clear current credential cache definitions and exit"},
 	{Short: "-c", Long: "--config", Description: "Config file path (default: ~/.config/retri/config.yaml)", ValueKind: "file", ValueHint: "<filepath>", TakesValue: true},
 	{Short: "-H", Long: "--host", Description: "Target single host", ValueKind: "host", TakesValue: true},
 	{Short: "-g", Long: "--group", Description: "Target group from retri config", ValueKind: "group", ValueHint: "<group name>", TakesValue: true},

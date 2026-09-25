@@ -56,8 +56,8 @@ credentials:
 
 ### `keyring`
 
-Reads an existing Linux session-keyring `user` key. This requires the `keyctl`
-command from the Linux keyutils package.
+Reads an existing Linux session-keyring `user` key using the
+kernel API directly; Retri does not require the `keyctl` command.
 
 ```yaml
 credentials:
@@ -76,6 +76,8 @@ the server endpoint. Retri does not log in to or unlock the vault for you.
 credentials:
   network-login:
     provider: bitwarden
+    server: https://vault.bitwarden.com  # must match bw status serverUrl
+    account: "BITWARDEN-USER-ID"          # bw status userId (not email)
     ref: 00000000-0000-0000-0000-000000000000
     field: password
 ```
@@ -103,6 +105,8 @@ Caching is independent of the provider:
 credentials:
   network-login:
     provider: bitwarden
+    server: https://vault.bitwarden.com  # must match bw status serverUrl
+    account: "BITWARDEN-USER-ID"          # bw status userId (not email)
     ref: 00000000-0000-0000-0000-000000000000
     cache:
       backend: session-keyring
@@ -113,7 +117,7 @@ Retri checks the cache before contacting the provider. This means a credential
 previously obtained from Bitwarden/Vaultwarden can still be used during a
 network outage while the key is present and unexpired.
 
-`session-keyring` is Linux-only and requires `keyctl`. If `ttl` is omitted it
+`session-keyring` is Linux-only and uses the kernel API directly. If `ttl` is omitted it
 defaults to 8 hours. No persistent on-disk cache is created.
 
 If an explicitly configured provider fails and no valid cache entry exists,
@@ -129,6 +133,89 @@ plaintext password inaccessible to a fully privileged root attacker while
 Retri is using that password. Where possible, prefer SSH public-key or FIDO2
 authentication so no reusable SSH password needs to be handled at all.
 
-Retri strips `RETRI_SSH_PASSWORD`, `RETRI_SSH_SECRET`, and `BW_SESSION` from the
-environment of SSH and recorded-shell child processes. Provider processes that
-need their own environment are invoked separately.
+Retri strips `RETRI_SSH_PASSWORD`, `RETRI_SSH_SECRET`, `BW_*`, `BWS_ACCESS_TOKEN`,
+all configured env-provider variables, and variables referenced by legacy or
+literal credential expansions from SSH and recorded-shell child environments.
+The `bw` child retains its own Bitwarden environment, including `BW_SESSION`.
+Ordinary SSH agent, proxy and locale variables are preserved. This is not an
+allowlist of every possible application secret in the parent environment.
+
+## Resolution and lifecycle
+
+Configuration priority is `defaults < groups < device_types < hosts < CLI`.
+The last applicable group wins. `RETRI_SSH_PASSWORD` / `RETRI_SSH_SECRET` are
+fallbacks only when no config value is selected (including an empty legacy
+`${VAR}` expansion). Literal and named references are exclusive within one
+layer; either form can override the other at a higher layer. CLI `-p/-s` values
+are literal, not expanded, and may be visible in process arguments.
+
+Named providers must return a nonempty value without NUL, CR or LF. Their
+failure never triggers a legacy env or prompt fallback. An explicit prompt
+requires terminal stdin. Completely unset credentials remain optional without
+a terminal, allowing public-key authentication and non-sudo automation.
+`${VAR}` expansion applies to legacy password/secret and literal `value`, not
+provider `ref`, `server`, `account`, `field`, or prompt labels.
+
+Resolved values and errors are shared by name for one invocation. Distinct
+prompts are serialized. Host execution uses that invocation's snapshot even if
+the session cache expires during the run; TTL is a limit on reuse by a later
+invocation, not a deadline that interrupts an established SSH session.
+
+Session cache TTL defaults to 8h and accepts 1s through 24h. A shortened TTL is
+also enforced against the original acquisition time. Reads do not extend it.
+Cache identity includes the canonical config path, credential name, source,
+reference, field, and bound Bitwarden profile. A changed literal definition is
+checked inside the protected payload rather than exposed in public metadata.
+Changing an env variable or rotating an upstream secret does not automatically
+refresh an unexpired snapshot.
+
+```bash
+retri -c config.yaml --credential-cache-refresh -g production
+retri -c config.yaml --credential-cache-clear
+```
+
+Refresh deletes each selected cached credential before contacting its source;
+failure does not restore the old value. Clear removes current definitions and
+exits without contacting providers. Removed/renamed definitions expire at their
+old TTL. Cache access or storage errors fail explicitly; they are not misses.
+Concurrent invocations may obtain different snapshots; no cross-process prompt
+deduplication is promised. Each stored payload carries its own expiry.
+
+The Linux session keyring is inherited by child processes and its scope depends
+on PAM/service setup; it is not necessarily one terminal or one human login.
+Cache keys grant permissions to their owner only, but this does not isolate
+secrets from other processes running as that user. Each snapshot gets a dedicated
+keyring with owner-only permissions and a kernel timeout before any secret is
+published inside it. The value key also receives permissions before publication
+and its own timeout afterwards (updating a user key resets its timeout). The
+containing ring bounds retention even if publication is interrupted. Failed
+publication revokes the keys. No plaintext disk
+cache is written. Go strings/runtime copies, swap, crash dumps and privileged
+memory inspection are outside this protection; temporary byte buffers are
+cleared where practical, without claiming guaranteed memory erasure.
+
+The v2 cache ignores entries written by earlier versions of this unmerged PR.
+If you ran those versions, inspect and remove their `retri:credential:` keys
+with keyutils; an earlier failed timeout could have left an unbounded entry.
+
+## Bitwarden operational contract
+
+`bw` is required only when a Bitwarden source is actually contacted. Retri uses
+`--nointeraction`, a 30-second command timeout, and bounded stdout; provider
+stderr and response bodies are never included in errors. Retri does not manage
+login, unlock, lock, logout, or sync. Export `BW_SESSION` from your own unlocked
+CLI session, and run `bw sync` when you need changes made by another client.
+`get item` reads the CLI vault; expiry of Retri's cache does not guarantee that
+this vault has been synchronized with the server.
+
+For Bitwarden session caching, `server` and `account` are required. Use the exact
+`serverUrl` and `userId` from `bw status` (not the email address). On a miss, Retri
+checks those values and unlocked status before reading the item. A cache hit
+needs neither `bw` nor an unlocked vault or network. Lock/logout does not revoke
+Retri's independent copy: clear it explicitly. Switching accounts or servers
+requires updating the bound profile, which selects a different cache identity.
+
+Automated logs redact known credential values across read boundaries and again
+after terminal rendering; debug output also redacts literal values. This does
+not promise detection of arbitrary secret transformations by a remote peer.
+Interactive record mode cannot redact credentials Retri has never acquired.

@@ -35,6 +35,8 @@ type CredentialSpec struct {
 	Field    string                `yaml:"field"`
 	Prompt   string                `yaml:"prompt"`
 	Value    string                `yaml:"value"`
+	Server   string                `yaml:"server"`
+	Account  string                `yaml:"account"`
 	Cache    CredentialCacheConfig `yaml:"cache"`
 }
 

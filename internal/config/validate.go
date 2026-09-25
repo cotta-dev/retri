@@ -79,6 +79,12 @@ func validateCredentials(credentials map[string]CredentialSpec) error {
 
 	for _, name := range names {
 		spec := credentials[name]
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("credential name must not be empty")
+		}
+		if strings.HasPrefix(spec.Ref, "-") || strings.ContainsAny(spec.Ref, "\x00\r\n") {
+			return fmt.Errorf("credential %q: invalid ref", name)
+		}
 		provider := strings.ToLower(strings.TrimSpace(spec.Provider))
 		if provider == "" {
 			return fmt.Errorf("credential %q: provider is required", name)
@@ -96,6 +102,12 @@ func validateCredentials(credentials map[string]CredentialSpec) error {
 		default:
 			return fmt.Errorf("credential %q: unsupported provider %q", name, spec.Provider)
 		}
+		if (provider != "prompt" && spec.Prompt != "") || (provider != "literal" && spec.Value != "") || (provider != "bitwarden" && (spec.Field != "" || spec.Server != "" || spec.Account != "")) || ((provider == "prompt" || provider == "literal") && spec.Ref != "") {
+			return fmt.Errorf("credential %q: fields do not match provider %q", name, provider)
+		}
+		if provider == "bitwarden" && ((spec.Server == "") != (spec.Account == "")) {
+			return fmt.Errorf("credential %q: server and account must be specified together", name)
+		}
 
 		backend := strings.ToLower(strings.TrimSpace(spec.Cache.Backend))
 		switch backend {
@@ -104,9 +116,12 @@ func validateCredentials(credentials map[string]CredentialSpec) error {
 				return fmt.Errorf("credential %q: cache ttl requires a cache backend", name)
 			}
 		case "session-keyring":
+			if provider == "bitwarden" && spec.Server == "" {
+				return fmt.Errorf("credential %q: Bitwarden cache requires server and account (bw status userId)", name)
+			}
 			if spec.Cache.TTL != "" {
 				d, err := time.ParseDuration(spec.Cache.TTL)
-				if err != nil || d <= 0 {
+				if err != nil || d < time.Second || d > 24*time.Hour {
 					return fmt.Errorf("credential %q: invalid cache ttl %q", name, spec.Cache.TTL)
 				}
 			}

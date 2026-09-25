@@ -15,6 +15,8 @@
 #
 #   network-login:
 #     provider: bitwarden
+#     server: https://vault.bitwarden.com
+#     account: "BITWARDEN-USER-ID"          # bw status userId
 #     ref: "BITWARDEN-ITEM-ID"
 #     field: password
 #     cache:

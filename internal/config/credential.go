@@ -14,7 +14,7 @@ type CredentialSource struct {
 // configuration priority as other CommonFields. A value and a named credential
 // are mutually exclusive at each layer (enforced by Config.Validate).
 //
-// Priority (low -> high): defaults < groups < device_types < hosts < env fallback < CLI.
+// Priority (low -> high): defaults < groups < device_types < hosts < CLI.
 // The environment fallback is used only when no config source was selected.
 func ResolveCredentialSources(rh ResolvedHost, defaults GlobalOptions, cliPassword, cliSecret string) (password, secret CredentialSource) {
 	password = resolveCredentialSource(
