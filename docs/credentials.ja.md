@@ -83,6 +83,57 @@ credentials:
 
 `field` の既定値は `password` です。`username` と custom field 名も指定できます。
 
+### Vaultwardenの初期設定
+
+Retriは公式の`bw` CLIを利用します。Retriを実行するWSL環境に`bw`をインストールし、
+Vaultwardenの外部公開URLを設定してください。
+
+```bash
+bw config server https://vault.example.com
+bw login your-email@example.com
+bw unlock
+```
+
+`bw unlock` が表示する Bash 用の`export BW_SESSION=...`を、Retriを実行する同じshellで
+実行します。vault itemの内容を表示せず、接続先とunlock状態を確認します。
+
+```bash
+bw status
+```
+
+出力の`serverUrl`と`userId`を使います。`account`にはメールアドレスではなく`userId`を
+指定してください。VaultwardenにLogin itemを作成し、名前で検索してitem IDを取得できます。
+
+```bash
+bw list items --search retri
+```
+
+Retriの設定でitemを参照します。`field`の既定値は`password`で、`username`またはcustom
+field名も指定できます。
+
+```yaml
+credentials:
+  vaultwarden-ssh:
+    provider: bitwarden
+    server: https://vault.example.com
+    account: "00000000-0000-0000-0000-000000000000"
+    ref: "VAULTWARDEN-ITEM-ID"
+    field: password
+
+defaults:
+  password_credential: vaultwarden-ssh
+```
+
+sudoやenable secretが別の場合は、別の名前付きcredentialを作成してください。他のclientで
+Vaultwardenのitemを変更した場合は、Retri実行前にCLI vaultを同期します。
+
+```bash
+bw sync
+```
+
+他のproviderを使うユーザーに`bw`は必要ありません。Retriがlogin、unlock、lock、logout、
+syncを自動実行することもありません。
+
 ### `literal`
 
 値を Retri の設定ファイルに直接保持します。移行やテスト用途のために用意していますが、

@@ -85,6 +85,59 @@ credentials:
 `field` defaults to `password`. `username` and named custom fields are also
 supported.
 
+### Vaultwarden setup
+
+Retri uses the official `bw` CLI. Install it on the same WSL environment where
+you run Retri, then point it at the externally reachable Vaultwarden URL:
+
+```bash
+bw config server https://vault.example.com
+bw login your-email@example.com
+bw unlock
+```
+
+Run the `export BW_SESSION=...` command printed by `bw unlock` in the same shell.
+Check the active profile without printing vault items:
+
+```bash
+bw status
+```
+
+Copy `serverUrl` and `userId` from that output. `account` must use `userId`, not
+the email address. Create a Login item in Vaultwarden and obtain its item ID,
+for example by searching item names:
+
+```bash
+bw list items --search retri
+```
+
+Then reference the item from Retri. The `field` value is `password` by default;
+it can also be `username` or the name of a custom field.
+
+```yaml
+credentials:
+  vaultwarden-ssh:
+    provider: bitwarden
+    server: https://vault.example.com
+    account: "00000000-0000-0000-0000-000000000000"
+    ref: "VAULTWARDEN-ITEM-ID"
+    field: password
+
+defaults:
+  password_credential: vaultwarden-ssh
+```
+
+Use a second named credential for a separate sudo or enable secret. If the
+Vaultwarden item changed in another client, refresh the local CLI vault before
+running Retri:
+
+```bash
+bw sync
+```
+
+`bw` is not needed by users of other providers. Retri does not perform login,
+unlock, lock, logout, or sync automatically.
+
 ### `literal`
 
 Stores the value directly in the Retri configuration. This exists for
