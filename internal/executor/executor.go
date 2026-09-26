@@ -69,7 +69,6 @@ func ExecuteHostTask(rh config.ResolvedHost, defaults config.GlobalOptions, opti
 		return
 	}
 	logFinalized := false
-	lg.RedactSecrets(password, secret)
 	defer func() {
 		if !logFinalized {
 			if err := logger.Finalize(lg, logFile); err != nil {
