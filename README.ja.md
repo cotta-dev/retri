@@ -171,6 +171,10 @@ retri --completion fish | source
 
 ### 環境変数とセキュリティ
 
+任意機能の[名前付きcredentialとsession cache](docs/credentials.ja.md)により、
+共有prompt、環境変数、Linux keyring、Bitwarden/Vaultwardenを利用できます。
+通常利用にBitwardenやLinux keyringは必須ではありません。
+
 設定ファイルにパスワードをハードコードしないでください。`${VAR}` 展開を活用します：
 
 ```bash

@@ -1,17 +1,94 @@
 # Retri Config Reference
 #
 # Priority chain (low → high):
-#   defaults < device_types < groups < hosts < env vars < CLI flags
+#   defaults < groups < device_types < hosts < CLI flags
+# RETRI_SSH_PASSWORD / RETRI_SSH_SECRET apply only when config is unset.
 #
 # Commands are AGGREGATED across all layers (not overridden).
-# suffix / filename_format / timestamp_format are only read from defaults (+ CLI).
+# suffix is read from defaults / groups (+ CLI); filename/timestamp format from defaults (+ CLI).
 #
-# ${VAR} in any string value is expanded from environment variables at runtime.
+# ${VAR} in legacy password/secret and literal credential value is expanded from environment variables at runtime.
 #
 # Legend:
 #   [required] must be specified
 #   [optional] can be omitted
 #   default: value shown when omitted
+
+# ===========================================================================
+# credentials — optional named credential definitions
+#
+# A named credential can be referenced by password_credential or
+# secret_credential from defaults / device_types / groups / hosts. This lets
+# many hosts share one prompt or external secret source without duplicating the
+# secret itself in config.
+#
+# Supported providers:
+#   prompt     hidden terminal prompt (one prompt per named credential per run)
+#   env        environment variable named by ref
+#   literal    value from value (mainly for migration/testing; plaintext is discouraged)
+#   keyring    existing Linux session keyring user key named by ref (native Linux API)
+#   bitwarden  Bitwarden CLI item named by ref; works with Bitwarden or Vaultwarden
+#              depending on `bw config server` (requires bw and an unlocked vault)
+#
+# Examples (do not put real secrets in this file):
+#   prompt:
+#     provider: prompt
+#     prompt: "Shared SSH password"
+#   env:
+#     provider: env
+#     ref: RETRI_SSH_PASSWORD
+#   keyring:
+#     provider: keyring
+#     ref: retri-linux-sudo
+#   bitwarden:
+#     provider: bitwarden
+#     server: https://pass.example.com
+#     account: "BITWARDEN-USER-ID" # bw status userId, not email
+#     ref: "BITWARDEN-ITEM-ID"
+#     field: password              # password, username, or custom field
+#   literal:
+#     provider: literal
+#     value: "migration-only-value" # plaintext; avoid in production
+#
+# Optional cache backend:
+#   none             default; only the in-process cache is used
+#   session-keyring  Linux session keyring cache (native Linux API). The cached
+#                    value can survive multiple retri invocations in the same
+#                    login session and can be used while the upstream provider
+#                    is unavailable. Default TTL: 8h; allowed 1s..24h. TTL limits reuse by later runs.
+# Cache errors fail explicitly; no provider fallback. See docs/credentials.md
+# for profile binding, refresh/clear, permissions and snapshot semantics.
+# ===========================================================================
+credentials:
+  linux-sudo:
+    provider: prompt
+    prompt: "Linux sudo password"       # [optional] prompt label
+    cache:
+      backend: session-keyring
+      ttl: 8h
+
+  network-login:
+    provider: bitwarden
+    server: https://vault.bitwarden.com  # must match bw status serverUrl
+    account: "BITWARDEN-USER-ID"          # bw status userId (not email)
+    ref: "BITWARDEN-ITEM-ID"            # [required for bitwarden]
+    field: password                      # [optional] password (default), username, or custom field name
+    cache:
+      backend: session-keyring
+      ttl: 8h
+
+  # A second named credential can be used for sudo or enable secret.
+  enable-secret:
+    provider: prompt
+    prompt: "Enable secret"
+
+  from-env:
+    provider: env
+    ref: RETRI_NETWORK_PASSWORD
+
+  existing-keyring-entry:
+    provider: keyring
+    ref: my-existing-key-description
 
 # ===========================================================================
 # defaults — global fallback applied to all hosts
@@ -20,7 +97,9 @@ defaults:
   # --- CommonFields (shared with device_types / groups / hosts) ---
   user: ""                  # [optional] default: current OS user (passed to ssh as-is)
   password: ""              # [optional] default: none  — SSH password. Prefer ${VAR} or key auth
+  password_credential: "" # [optional] named credential; exclusive with password in this layer
   secret: ""                # [optional] default: none  — sudo / enable secret. Prefer ${VAR}
+  secret_credential: ""   # [optional] named credential; exclusive with secret in this layer
   command: ""               # [optional] default: none  — single command (ignored if commands is set)
   commands: []              # [optional] default: []    — list of commands to run
   command_file: ""          # [optional] default: none  — path to file with commands (one per line)
@@ -44,14 +123,16 @@ defaults:
 
 # ===========================================================================
 # device_types — reusable profiles for interactive (PTY) devices
-#                applied after defaults, before groups / hosts
+#                applied after defaults / groups, before hosts
 # ===========================================================================
 device_types:
   my_device:            # key name — referenced via device_type in defaults / groups / hosts
     # --- CommonFields ---
     user: ""            # [optional] default: none
     password: ""        # [optional] default: none
+    password_credential: "" # [optional] named credential; exclusive with password in this layer
     secret: ""          # [optional] default: none
+    secret_credential: ""   # [optional] named credential; exclusive with secret in this layer
     command: ""         # [optional] default: none
     commands: []        # [optional] default: []
     command_file: ""    # [optional] default: none
@@ -66,7 +147,7 @@ device_types:
 
 # ===========================================================================
 # groups — apply shared settings to multiple hosts
-#          applied after defaults and device_types
+#          applied after defaults, before device_types and hosts
 # ===========================================================================
 groups:
   - name: "my_group"    # [required] — referenced via groups: [...] in hosts, or -g CLI flag
@@ -74,7 +155,9 @@ groups:
     # --- CommonFields ---
     user: ""            # [optional] default: none
     password: ""        # [optional] default: none
+    password_credential: "" # [optional] named credential; exclusive with password in this layer
     secret: ""          # [optional] default: none
+    secret_credential: ""   # [optional] named credential; exclusive with secret in this layer
     command: ""         # [optional] default: none
     commands: []        # [optional] default: []
     command_file: ""    # [optional] default: none
@@ -97,7 +180,9 @@ hosts:
     # --- CommonFields ---
     user: ""            # [optional] default: none
     password: ""        # [optional] default: none
+    password_credential: "" # [optional] named credential; exclusive with password in this layer
     secret: ""          # [optional] default: none
+    secret_credential: ""   # [optional] named credential; exclusive with secret in this layer
     command: ""         # [optional] default: none
     commands: []        # [optional] default: []
     command_file: ""    # [optional] default: none

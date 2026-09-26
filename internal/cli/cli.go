@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/jessevdk/go-flags"
-	"golang.org/x/term"
 
 	"github.com/cotta-dev/retri/internal/config"
+	"github.com/cotta-dev/retri/internal/credentials"
 	"github.com/cotta-dev/retri/internal/executor"
 	"github.com/cotta-dev/retri/internal/logencoding"
 	"github.com/cotta-dev/retri/internal/logger"
@@ -45,9 +45,11 @@ type Options struct {
 	NoTimestamp bool `short:"T" long:"no-timestamp" description:"Disable timestamp logging"`
 
 	// Authentication (also available via RETRI_SSH_PASSWORD / RETRI_SSH_SECRET)
-	Password    string `short:"p" long:"password" description:"SSH Password (default: $RETRI_SSH_PASSWORD or config)"`
-	Secret      string `short:"s" long:"secret" description:"Sudo Secret (default: $RETRI_SSH_SECRET or config)"`
-	ExitCommand string `short:"e" long:"exit-command" description:"Exit command for interactive sessions (default: exit)"`
+	Password               string `short:"p" long:"password" description:"SSH password literal override; command-line values may be visible to other processes"`
+	Secret                 string `short:"s" long:"secret" description:"Sudo/enable secret literal override; command-line values may be visible to other processes"`
+	ExitCommand            string `short:"e" long:"exit-command" description:"Exit command for interactive sessions (default: exit)"`
+	CredentialCacheRefresh bool   `long:"credential-cache-refresh" description:"Discard selected credential caches and obtain fresh values from their configured sources"`
+	CredentialCacheClear   bool   `long:"credential-cache-clear" description:"Clear this config's current credential cache entries and exit"`
 
 	// Misc
 	Completion string `long:"completion" choice:"bash" choice:"zsh" choice:"fish" description:"Generate shell completion script (bash, zsh, or fish)"`
@@ -137,11 +139,27 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 
 	// 4. Validate config
 	if err := cfg.Validate(); err != nil {
-		log.Fatalf("[ERROR] Config validation failed: %v", err)
+		// Validation walks credential fields. Do not pass that error to the
+		// process logger: CodeQL and future validators must not turn a config
+		// value into a clear-text log record. Detailed diagnostics remain
+		// available to callers of config.Validate and tests.
+		log.Fatal("[ERROR] Config validation failed; review the configuration")
 	}
 	if _, err := logencoding.Lookup(opts.LogEncoding); err != nil {
 		log.Fatalf("[ERROR] Invalid --log-encoding: %v", err)
 	}
+	if opts.CredentialCacheClear {
+		r := credentials.NewResolver(cfg.Credentials)
+		r.Configure(credentialNamespace(opts.ConfigFile), false, credentials.ChildEnvironment(cfg, os.Environ(), true))
+		err := r.Clear()
+		r.Close()
+		if err != nil {
+			log.Fatalf("[ERROR] Failed to clear credential cache: %v", err)
+		}
+		fmt.Println("Credential cache cleared for current definitions.")
+		return
+	}
+	childEnv := credentials.ChildEnvironment(cfg, os.Environ(), false)
 
 	// 5. Check for a newer release once per day when enabled.
 	updateCheckEnabled := cfg.Defaults.UpdateCheck == nil || *cfg.Defaults.UpdateCheck
@@ -154,10 +172,10 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	if opts.Host == "" && opts.Group == "" && opts.Command == "" && opts.CommandFile == "" {
 		if len(remaining) == 1 {
 			// retri <hostname> → SSH to host and record session
-			runSSHRecordMode(opts, remaining[0], cfg.Defaults)
+			runSSHRecordMode(opts, remaining[0], cfg.Defaults, childEnv)
 		} else {
 			// retri (no args) → record local shell session
-			runRecordMode(opts, cfg.Defaults)
+			runRecordMode(opts, cfg.Defaults, childEnv)
 		}
 		return
 	}
@@ -174,11 +192,31 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	}
 
 	// 9. Determine parallel count
+	// Plan commands before acquiring secrets; skipped hosts need no providers.
+	var runnable []config.ResolvedHost
+	var plannedCommands [][]string
+	for _, target := range targets {
+		commands := executor.CollectCommands(target, cfg.Defaults, opts.CommandFile, opts.Command)
+		if target.HostConfig.Host == "" || len(commands) == 0 {
+			log.Printf("[%s] Skip: Missing host or commands", target.HostConfig.Host)
+			continue
+		}
+		runnable = append(runnable, target)
+		plannedCommands = append(plannedCommands, commands)
+	}
+	targets = runnable
+	if len(targets) == 0 {
+		return
+	}
 	parallelCount := config.DetermineParallelCount(cfg.Defaults.Parallel, opts.Parallel)
 
-	// 9a. Prompt for missing credentials (only for SSH targets, not record mode).
-	//     Check each target after full config resolution; prompt once if any are missing.
-	fallbackPassword, fallbackSecret := promptMissingCredentials(targets, cfg.Defaults, opts.Password, opts.Secret, opts.LogDir, opts.Suffix, opts.FilenameFormat, opts.TimestampFormat)
+	// 9a. Resolve named credentials before starting parallel host work. Shared
+	// prompt providers are therefore requested once per retri invocation.
+	resolvedCredentials, err := resolveTargetCredentials(targets, cfg, opts)
+	if err != nil {
+		log.Fatalf("[ERROR] Failed to resolve credentials: %v", err)
+	}
+	defer clear(resolvedCredentials)
 
 	// 10. Main execution loop (parallel)
 	log.Printf("Starting tasks for %d hosts (Parallel: %d)...", len(targets), parallelCount)
@@ -186,77 +224,39 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, parallelCount)
 
-	for _, target := range targets {
+	for i, target := range targets {
 		wg.Add(1)
-		go func(rh config.ResolvedHost) {
+		auth := resolvedCredentials[i]
+		go func(rh config.ResolvedHost, auth resolvedHostCredentials) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			executor.ExecuteHostTask(rh, cfg.Defaults, executor.HostTaskOptions{
-				Command:          opts.Command,
-				CommandFile:      opts.CommandFile,
-				Password:         opts.Password,
-				Secret:           opts.Secret,
-				LogDir:           opts.LogDir,
-				Suffix:           opts.Suffix,
-				FilenameFormat:   opts.FilenameFormat,
-				TimestampFormat:  opts.TimestampFormat,
-				LogEncoding:      opts.LogEncoding,
-				ExitCommand:      opts.ExitCommand,
-				FallbackPassword: fallbackPassword,
-				FallbackSecret:   fallbackSecret,
-				NoTimestamp:      opts.NoTimestamp,
-				Debug:            opts.Debug,
+				Commands:        plannedCommands[i],
+				Command:         opts.Command,
+				CommandFile:     opts.CommandFile,
+				Password:        auth.Password,
+				Secret:          auth.Secret,
+				Environment:     childEnv,
+				LogDir:          opts.LogDir,
+				Suffix:          opts.Suffix,
+				FilenameFormat:  opts.FilenameFormat,
+				TimestampFormat: opts.TimestampFormat,
+				LogEncoding:     opts.LogEncoding,
+				ExitCommand:     opts.ExitCommand,
+				NoTimestamp:     opts.NoTimestamp,
+				Debug:           opts.Debug,
 			})
-		}(target)
+		}(target, auth)
 	}
 
 	wg.Wait()
 	log.Println("All tasks finished.")
 }
 
-// promptMissingCredentials checks resolved settings for each target and prompts
-// the user (hidden input) for any credential that is missing across all targets.
-// Returns fallback values to be applied only to hosts that have no credential set.
-func promptMissingCredentials(targets []config.ResolvedHost, defaults config.GlobalOptions, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat string) (fallbackPassword, fallbackSecret string) {
-	var missingPasswordHosts, missingSecretHosts []string
-
-	for _, rh := range targets {
-		_, pw, sec, _, _, _, _, _ := config.ResolveSettings(rh, defaults, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat)
-		if pw == "" {
-			missingPasswordHosts = append(missingPasswordHosts, rh.HostConfig.Host)
-		}
-		if sec == "" {
-			missingSecretHosts = append(missingSecretHosts, rh.HostConfig.Host)
-		}
-	}
-
-	if len(missingPasswordHosts) > 0 {
-		fmt.Fprintf(os.Stderr, "[INFO] SSH password not set for: %s\n", strings.Join(missingPasswordHosts, ", "))
-		fmt.Fprint(os.Stderr, "SSH Password (leave blank to skip): ")
-		b, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
-		if err == nil {
-			fallbackPassword = string(b)
-		}
-	}
-
-	if len(missingSecretHosts) > 0 {
-		fmt.Fprintf(os.Stderr, "[INFO] Sudo secret not set for: %s\n", strings.Join(missingSecretHosts, ", "))
-		fmt.Fprint(os.Stderr, "Sudo Secret (leave blank to skip): ")
-		b, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
-		if err == nil {
-			fallbackSecret = string(b)
-		}
-	}
-
-	return
-}
-
 // runSSHRecordMode SSHes to host and records the interactive session to a log file.
-func runSSHRecordMode(opts Options, host string, defaults config.GlobalOptions) {
+func runSSHRecordMode(opts Options, host string, defaults config.GlobalOptions, env []string) {
 	lg, logFile, logPath, err := logger.Setup(host, sessionLogOptions(opts, defaults))
 	if err != nil {
 		log.Fatalf("[ERROR] Failed to setup logger: %v", err)
@@ -284,7 +284,7 @@ func runSSHRecordMode(opts Options, host string, defaults config.GlobalOptions) 
 	if commandsOnly {
 		log.Printf("Command/output-only logging enabled.")
 	}
-	if err := executor.RunSSHRecordSession(host, "", lg, commandsOnly, opts.Debug); err != nil {
+	if err := executor.RunSSHRecordSession(host, "", lg, commandsOnly, opts.Debug, env); err != nil {
 		log.Printf("[ERROR] SSH session error: %v", err)
 	}
 
@@ -301,7 +301,7 @@ func runSSHRecordMode(opts Options, host string, defaults config.GlobalOptions) 
 }
 
 // runRecordMode starts a local shell session recording.
-func runRecordMode(opts Options, defaults config.GlobalOptions) {
+func runRecordMode(opts Options, defaults config.GlobalOptions, env []string) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "localhost"
@@ -336,7 +336,7 @@ func runRecordMode(opts Options, defaults config.GlobalOptions) {
 	if commandsOnly {
 		log.Printf("Command/output-only logging enabled.")
 	}
-	if err := executor.RunRecordSession(lg, commandsOnly, opts.Debug); err != nil {
+	if err := executor.RunRecordSession(lg, commandsOnly, opts.Debug, env); err != nil {
 		log.Printf("[ERROR] Record session error: %v", err)
 	}
 

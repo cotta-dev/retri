@@ -5,13 +5,20 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/cotta-dev/retri/internal/logencoding"
 )
 
 // Validate checks the config for errors that would cause runtime failures.
-// This includes validating prompt_regex patterns in device_types.
 func (c *Config) Validate() error {
+	if err := validateCredentials(c.Credentials); err != nil {
+		return err
+	}
+	if err := validateCommonCredentials("defaults", c.Defaults.CommonFields, c.Credentials); err != nil {
+		return err
+	}
 	if err := validateLogEncoding("defaults", c.Defaults.LogEncoding); err != nil {
 		return err
 	}
@@ -28,7 +35,11 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("device_type '%s': invalid prompt_regex '%s': %w", name, dt.PromptRegex, err)
 			}
 		}
-		if err := validateLogEncoding(fmt.Sprintf("device_type %q", name), dt.LogEncoding); err != nil {
+		label := fmt.Sprintf("device_type %q", name)
+		if err := validateCommonCredentials(label, dt.CommonFields, c.Credentials); err != nil {
+			return err
+		}
+		if err := validateLogEncoding(label, dt.LogEncoding); err != nil {
 			return err
 		}
 	}
@@ -36,6 +47,9 @@ func (c *Config) Validate() error {
 		label := fmt.Sprintf("groups[%d]", i)
 		if group.Name != "" {
 			label = fmt.Sprintf("group %q", group.Name)
+		}
+		if err := validateCommonCredentials(label, group.CommonFields, c.Credentials); err != nil {
+			return err
 		}
 		if err := validateLogEncoding(label, group.LogEncoding); err != nil {
 			return err
@@ -46,8 +60,93 @@ func (c *Config) Validate() error {
 		if host.Host != "" {
 			label = fmt.Sprintf("host %q", host.Host)
 		}
+		if err := validateCommonCredentials(label, host.CommonFields, c.Credentials); err != nil {
+			return err
+		}
 		if err := validateLogEncoding(label, host.LogEncoding); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateCredentials(credentials map[string]CredentialSpec) error {
+	names := make([]string, 0, len(credentials))
+	for name := range credentials {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		spec := credentials[name]
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("credential name must not be empty")
+		}
+		if strings.HasPrefix(spec.Ref, "-") || strings.ContainsAny(spec.Ref, "\x00\r\n") {
+			return fmt.Errorf("credential %q: invalid ref", name)
+		}
+		provider := strings.ToLower(strings.TrimSpace(spec.Provider))
+		if provider == "" {
+			return fmt.Errorf("credential %q: provider is required", name)
+		}
+		switch provider {
+		case "prompt":
+		case "env", "keyring", "bitwarden":
+			if strings.TrimSpace(spec.Ref) == "" {
+				return fmt.Errorf("credential %q: provider %q requires ref", name, provider)
+			}
+		case "literal":
+			if spec.Value == "" {
+				return fmt.Errorf("credential %q: provider %q requires value", name, provider)
+			}
+		default:
+			return fmt.Errorf("credential %q: unsupported provider %q", name, spec.Provider)
+		}
+		if (provider != "prompt" && spec.Prompt != "") || (provider != "literal" && spec.Value != "") || (provider != "bitwarden" && (spec.Field != "" || spec.Server != "" || spec.Account != "")) || ((provider == "prompt" || provider == "literal") && spec.Ref != "") {
+			return fmt.Errorf("credential %q: fields do not match provider %q", name, provider)
+		}
+		if provider == "bitwarden" && ((spec.Server == "") != (spec.Account == "")) {
+			return fmt.Errorf("credential %q: server and account must be specified together", name)
+		}
+
+		backend := strings.ToLower(strings.TrimSpace(spec.Cache.Backend))
+		switch backend {
+		case "", "none":
+			if spec.Cache.TTL != "" {
+				return fmt.Errorf("credential %q: cache ttl requires a cache backend", name)
+			}
+		case "session-keyring":
+			if provider == "bitwarden" && spec.Server == "" {
+				return fmt.Errorf("credential %q: Bitwarden cache requires server and account (bw status userId)", name)
+			}
+			if spec.Cache.TTL != "" {
+				d, err := time.ParseDuration(spec.Cache.TTL)
+				if err != nil || d < time.Second || d > 24*time.Hour {
+					return fmt.Errorf("credential %q: invalid cache ttl %q", name, spec.Cache.TTL)
+				}
+			}
+		default:
+			return fmt.Errorf("credential %q: unsupported cache backend %q", name, spec.Cache.Backend)
+		}
+	}
+	return nil
+}
+
+func validateCommonCredentials(section string, fields CommonFields, credentials map[string]CredentialSpec) error {
+	if fields.Password != "" && fields.PasswordCredential != "" {
+		return fmt.Errorf("%s: password and password_credential are mutually exclusive", section)
+	}
+	if fields.Secret != "" && fields.SecretCredential != "" {
+		return fmt.Errorf("%s: secret and secret_credential are mutually exclusive", section)
+	}
+	if fields.PasswordCredential != "" {
+		if _, ok := credentials[fields.PasswordCredential]; !ok {
+			return fmt.Errorf("%s: password_credential is not defined", section)
+		}
+	}
+	if fields.SecretCredential != "" {
+		if _, ok := credentials[fields.SecretCredential]; !ok {
+			return fmt.Errorf("%s: secret_credential is not defined", section)
 		}
 	}
 	return nil

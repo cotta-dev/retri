@@ -328,6 +328,26 @@ func TestHandlePrompts_SendsPasswordWithoutLoggingSecret(t *testing.T) {
 	}
 }
 
+func TestHandlePrompts_EnableUsesSecretAndRedactsEcho(t *testing.T) {
+	reader := &chunkReadWriter{data: []byte("Password: \r\nenable-secret\r\nRouter#"), chunkSize: 1}
+	var output bytes.Buffer
+	ll := logger.NewLineLogger(&output, false)
+	done := make(chan error, 1)
+	commands := make(chan string, 1)
+	commands <- "enable"
+	handlePrompts(reader, ll, "login-password", "enable-secret", `[#>] ?$`, make(chan struct{}, 10), commands, done, false)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	ll.Flush()
+	if reader.writes.String() != "enable-secret\n" {
+		t.Fatalf("wrong credential response: %q", reader.writes.String())
+	}
+	if strings.Contains(output.String(), "enable-secret") || !strings.Contains(output.String(), "[REDACTED]") {
+		t.Fatal("echoed secret leaked")
+	}
+}
+
 func TestHandlePrompts_PreservesLegacyEncodedOutput(t *testing.T) {
 	transcript := []byte("Router#show interfaces description\r\nGi0/0  ")
 	transcript = append(transcript, []byte{0x93, 0xfa, 0x96, 0x7b, 0x8c, 0xea}...)

@@ -166,9 +166,16 @@ func ResolveTargets(cfg Config, argHost, argGroup string) []ResolvedHost {
 // explicit CLI override.
 // Returns user, password, secret, logDir, suffix, filenameFormat, timestampFormat, and promptTimeout.
 func ResolveSettings(rh ResolvedHost, defaults GlobalOptions, cliPassword, cliSecret, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat string) (user, password, secret, logDir, suffix, filenameFormat, timestampFormat string, promptTimeout time.Duration) {
-	user = resolveCommonString(rh, defaults, func(fp FieldProvider) string { return fp.Common().User }, "", "")
 	password = resolveCommonString(rh, defaults, func(fp FieldProvider) string { return fp.Common().Password }, "RETRI_SSH_PASSWORD", cliPassword)
 	secret = resolveCommonString(rh, defaults, func(fp FieldProvider) string { return fp.Common().Secret }, "RETRI_SSH_SECRET", cliSecret)
+	user, logDir, suffix, filenameFormat, timestampFormat, promptTimeout = ResolveExecutionSettings(rh, defaults, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat)
+	return
+}
+
+// ResolveExecutionSettings selects non-credential settings. Credential sources
+// are selected separately, so the executor never re-reads secret environment variables.
+func ResolveExecutionSettings(rh ResolvedHost, defaults GlobalOptions, cliLogDir, cliSuffix, cliFilenameFormat, cliTimestampFormat string) (user, logDir, suffix, filenameFormat, timestampFormat string, promptTimeout time.Duration) {
+	user = resolveCommonString(rh, defaults, func(fp FieldProvider) string { return fp.Common().User }, "", "")
 	logDir = resolveCommonString(rh, defaults, func(fp FieldProvider) string { return fp.Common().LogDir }, "", cliLogDir)
 
 	// Suffix only from defaults and groups (not from device_types/hosts)
