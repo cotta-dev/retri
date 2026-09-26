@@ -141,12 +141,12 @@ func validateCommonCredentials(section string, fields CommonFields, credentials 
 	}
 	if fields.PasswordCredential != "" {
 		if _, ok := credentials[fields.PasswordCredential]; !ok {
-			return fmt.Errorf("%s: password_credential %q is not defined", section, fields.PasswordCredential)
+			return fmt.Errorf("%s: password_credential is not defined", section)
 		}
 	}
 	if fields.SecretCredential != "" {
 		if _, ok := credentials[fields.SecretCredential]; !ok {
-			return fmt.Errorf("%s: secret_credential %q is not defined", section, fields.SecretCredential)
+			return fmt.Errorf("%s: secret_credential is not defined", section)
 		}
 	}
 	return nil

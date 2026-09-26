@@ -139,7 +139,11 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 
 	// 4. Validate config
 	if err := cfg.Validate(); err != nil {
-		log.Fatalf("[ERROR] Config validation failed: %v", err)
+		// Validation walks credential fields. Do not pass that error to the
+		// process logger: CodeQL and future validators must not turn a config
+		// value into a clear-text log record. Detailed diagnostics remain
+		// available to callers of config.Validate and tests.
+		log.Fatal("[ERROR] Config validation failed; review the configuration")
 	}
 	if _, err := logencoding.Lookup(opts.LogEncoding); err != nil {
 		log.Fatalf("[ERROR] Invalid --log-encoding: %v", err)
