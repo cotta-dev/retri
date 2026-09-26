@@ -30,6 +30,26 @@
 #   bitwarden  Bitwarden CLI item named by ref; works with Bitwarden or Vaultwarden
 #              depending on `bw config server` (requires bw and an unlocked vault)
 #
+# Examples (do not put real secrets in this file):
+#   prompt:
+#     provider: prompt
+#     prompt: "Shared SSH password"
+#   env:
+#     provider: env
+#     ref: RETRI_SSH_PASSWORD
+#   keyring:
+#     provider: keyring
+#     ref: retri-linux-sudo
+#   bitwarden:
+#     provider: bitwarden
+#     server: https://pass.example.com
+#     account: "BITWARDEN-USER-ID" # bw status userId, not email
+#     ref: "BITWARDEN-ITEM-ID"
+#     field: password              # password, username, or custom field
+#   literal:
+#     provider: literal
+#     value: "migration-only-value" # plaintext; avoid in production
+#
 # Optional cache backend:
 #   none             default; only the in-process cache is used
 #   session-keyring  Linux session keyring cache (native Linux API). The cached
@@ -56,6 +76,11 @@ credentials:
     cache:
       backend: session-keyring
       ttl: 8h
+
+  # A second named credential can be used for sudo or enable secret.
+  enable-secret:
+    provider: prompt
+    prompt: "Enable secret"
 
   from-env:
     provider: env

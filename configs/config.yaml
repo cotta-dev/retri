@@ -3,7 +3,9 @@
 # Run "retri -C" to view all available options, priorities, and examples.
 #
 # Named credentials are optional. They let multiple hosts share one credential
-# source without putting the secret itself in this file.
+# source without putting the secret itself in this file. Select exactly one
+# provider for each credential. Cache is optional and never writes plaintext to
+# disk.
 #
 # credentials:
 #   linux-sudo:
@@ -13,15 +15,27 @@
 #       backend: session-keyring
 #       ttl: 8h
 #
+#   from-env:
+#     provider: env
+#     ref: RETRI_SSH_PASSWORD
+#
+#   existing-keyring-entry:
+#     provider: keyring              # Linux session keyring (Linux only)
+#     ref: retri-linux-sudo
+#
 #   network-login:
 #     provider: bitwarden
 #     server: https://vault.bitwarden.com
-#     account: "BITWARDEN-USER-ID"          # bw status userId
+#     account: "BITWARDEN-USER-ID"   # bw status userId (not email)
 #     ref: "BITWARDEN-ITEM-ID"
 #     field: password
 #     cache:
 #       backend: session-keyring
 #       ttl: 8h
+#
+#   migration-only:
+#     provider: literal              # plaintext in this file; avoid in production
+#     value: "replace-me"
 
 defaults:
   # user: "admin"
