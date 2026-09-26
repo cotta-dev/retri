@@ -67,6 +67,9 @@ func readHiddenPrompt(label string) (string, error) {
 }
 
 func (r *Resolver) readBitwarden(spec config.CredentialSpec) (string, error) {
+	if strings.TrimSpace(os.Getenv("BW_SESSION")) == "" {
+		return "", fmt.Errorf("BW_SESSION is not set; run `export BW_SESSION=\"$(bw unlock --raw)\"` in the same shell before starting retri")
+	}
 	if spec.Server != "" {
 		out, err := r.run("bw", []string{"status", "--nointeraction"}, nil)
 		if err != nil {

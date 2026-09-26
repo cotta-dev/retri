@@ -76,6 +76,7 @@ func TestResolveLiteralExpandsEnvironment(t *testing.T) {
 }
 
 func TestResolveBitwardenPasswordAndCustomField(t *testing.T) {
+	t.Setenv("BW_SESSION", "test-session")
 	var calls [][]string
 	r := NewResolver(map[string]config.CredentialSpec{
 		"password": {Provider: "bitwarden", Ref: "item-id"},
@@ -103,6 +104,17 @@ func TestResolveBitwardenPasswordAndCustomField(t *testing.T) {
 	want := [][]string{{"get", "item", "item-id", "--nointeraction"}, {"get", "item", "item-id", "--nointeraction"}}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("calls = %#v, want %#v", calls, want)
+	}
+}
+
+func TestBitwardenRequiresSessionHint(t *testing.T) {
+	t.Setenv("BW_SESSION", "")
+	r := NewResolver(map[string]config.CredentialSpec{
+		"login": {Provider: "bitwarden", Ref: "item-id"},
+	})
+	_, err := r.Resolve("login")
+	if err == nil || !strings.Contains(err.Error(), `export BW_SESSION="$(bw unlock --raw)"`) {
+		t.Fatalf("error = %v, want BW_SESSION unlock hint", err)
 	}
 }
 
@@ -169,6 +181,7 @@ func TestRejectEmptyAndTerminalControlValues(t *testing.T) {
 }
 
 func TestBitwardenProfileMismatchAndMalformedResponseAreSafe(t *testing.T) {
+	t.Setenv("BW_SESSION", "test-session")
 	for _, response := range []string{`{"serverUrl":"https://other","userId":"account","status":"unlocked"}`, `{"secret":"sensitive-value"`} {
 		r := NewResolver(nil)
 		r.run = func(_ string, args []string, _ []byte) ([]byte, error) {
