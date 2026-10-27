@@ -286,7 +286,9 @@ func TestHandlePrompts_NetworkDeviceTranscripts(t *testing.T) {
 				doneCh := make(chan error, 1)
 
 				handlePrompts(reader, ll, "", "", fixture.promptRegex, promptCh, nil, doneCh, false)
-				<-doneCh
+				if err := <-doneCh; err != nil {
+					t.Fatalf("handlePrompts returned an error: %v", err)
+				}
 				ll.Flush()
 
 				if len(promptCh) == 0 {
@@ -317,7 +319,9 @@ func TestHandlePrompts_SendsPasswordWithoutLoggingSecret(t *testing.T) {
 	doneCh := make(chan error, 1)
 
 	handlePrompts(reader, ll, "top-secret", "", `[#>] ?$`, make(chan struct{}, 1), nil, doneCh, false)
-	<-doneCh
+	if err := <-doneCh; err != nil {
+		t.Fatalf("handlePrompts returned an error: %v", err)
+	}
 	ll.Flush()
 
 	if got, want := reader.writes.String(), "top-secret\n"; got != want {
@@ -359,7 +363,9 @@ func TestHandlePrompts_PreservesLegacyEncodedOutput(t *testing.T) {
 	doneCh := make(chan error, 1)
 
 	handlePrompts(reader, ll, "", "", `[#>] ?$`, promptCh, nil, doneCh, false)
-	<-doneCh
+	if err := <-doneCh; err != nil {
+		t.Fatalf("handlePrompts returned an error: %v", err)
+	}
 	ll.Flush()
 
 	wantLine := []byte("Gi0/0  ")
@@ -389,7 +395,9 @@ func TestHandlePrompts_ConvertsConfiguredNetworkEncoding(t *testing.T) {
 	doneCh := make(chan error, 1)
 
 	handlePrompts(reader, ll, "", "", `[#>] ?$`, promptCh, nil, doneCh, false)
-	<-doneCh
+	if err := <-doneCh; err != nil {
+		t.Fatalf("handlePrompts returned an error: %v", err)
+	}
 	ll.Flush()
 
 	if !strings.Contains(output.String(), "Gi0/0  日本語\n") {
