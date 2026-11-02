@@ -2,7 +2,7 @@
 
 Retri は既存の `password`、`secret`、`${VAR}`、`RETRI_SSH_PASSWORD`、
 `RETRI_SSH_SECRET` をそのまま利用できます。名前付き credential は任意機能であり、
-Bitwarden、Vaultwarden、Linux keyring の導入は必須ではありません。
+Bitwarden、Linux keyring の導入は必須ではありません。
 
 名前付き credential を使うと、**秘密情報をどこから取得するか**と
 **どこで利用するか**を分離できます。
@@ -67,8 +67,8 @@ credentials:
 
 ### `bitwarden`
 
-公式 Bitwarden CLI の `bw` を使って login item を取得します。Bitwarden Cloud と
-Vaultwarden を Retri 側では区別しません。接続先は `bw config server` で決まります。
+公式 Bitwarden CLI の `bw` を使って login item を取得します。
+接続先は `bw config server` で決まります。
 Retri 自身は vault の login / unlock を行いません。
 
 ```yaml
@@ -83,10 +83,10 @@ credentials:
 
 `field` の既定値は `password` です。`username` と custom field 名も指定できます。
 
-### Vaultwardenの初期設定
+### Bitwardenの初期設定
 
 Retriは公式の`bw` CLIを利用します。Retriを実行するWSL環境に`bw`をインストールし、
-Vaultwardenの外部公開URLを設定してください。
+Bitwardenの外部公開URLを設定してください。
 
 ```bash
 bw config server https://vault.example.com
@@ -102,7 +102,7 @@ bw status
 ```
 
 出力の`serverUrl`と`userId`を使います。`account`にはメールアドレスではなく`userId`を
-指定してください。VaultwardenにLogin itemを作成し、名前で検索してitem IDを取得できます。
+指定してください。BitwardenにLogin itemを作成し、名前で検索してitem IDを取得できます。
 
 ```bash
 bw list items --search retri
@@ -113,19 +113,19 @@ field名も指定できます。
 
 ```yaml
 credentials:
-  vaultwarden-ssh:
+  bitwarden-ssh:
     provider: bitwarden
     server: https://vault.example.com
     account: "00000000-0000-0000-0000-000000000000"
-    ref: "VAULTWARDEN-ITEM-ID"
+    ref: "BITWARDEN-ITEM-ID"
     field: password
 
 defaults:
-  password_credential: vaultwarden-ssh
+  password_credential: bitwarden-ssh
 ```
 
 sudoやenable secretが別の場合は、別の名前付きcredentialを作成してください。他のclientで
-Vaultwardenのitemを変更した場合は、Retri実行前にCLI vaultを同期します。
+Bitwardenのitemを変更した場合は、Retri実行前にCLI vaultを同期します。
 
 ```bash
 bw sync
@@ -163,7 +163,7 @@ credentials:
 ```
 
 Retri は provider にアクセスする前に cache を確認します。そのため一度
-Bitwarden/Vaultwarden から取得済みであれば、ネットワーク断や Vaultwarden 停止中でも
+Bitwarden から取得済みであれば、ネットワーク断や Bitwarden 停止中でも
 key が残っていて TTL 内であれば利用できます。
 
 `session-keyring` は Linux のみ対応し、kernel APIを直接利用します。`ttl` 省略時は8時間です。

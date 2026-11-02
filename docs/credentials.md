@@ -2,7 +2,7 @@
 
 Retri can continue to use the existing `password`, `secret`, `${VAR}`,
 `RETRI_SSH_PASSWORD`, and `RETRI_SSH_SECRET` configuration. Named credentials
-are optional and do not require Bitwarden, Vaultwarden, or Linux keyrings.
+are optional and do not require Bitwarden or Linux keyrings.
 
 Named credentials separate **where a secret comes from** from **where it is
 used**:
@@ -68,9 +68,8 @@ credentials:
 
 ### `bitwarden`
 
-Reads a Bitwarden login item through the official `bw` CLI. The provider does
-not distinguish Bitwarden Cloud from Vaultwarden; `bw config server` controls
-the server endpoint. Retri does not log in to or unlock the vault for you.
+Reads a Bitwarden login item through the official `bw` CLI.
+`bw config server` controls the server endpoint. Retri does not log in to or unlock the vault for you.
 
 ```yaml
 credentials:
@@ -85,10 +84,10 @@ credentials:
 `field` defaults to `password`. `username` and named custom fields are also
 supported.
 
-### Vaultwarden setup
+### Bitwarden setup
 
 Retri uses the official `bw` CLI. Install it on the same WSL environment where
-you run Retri, then point it at the externally reachable Vaultwarden URL:
+you run Retri, then point it at the externally reachable Bitwarden URL:
 
 ```bash
 bw config server https://vault.example.com
@@ -104,7 +103,7 @@ bw status
 ```
 
 Copy `serverUrl` and `userId` from that output. `account` must use `userId`, not
-the email address. Create a Login item in Vaultwarden and obtain its item ID,
+the email address. Create a Login item in Bitwarden and obtain its item ID,
 for example by searching item names:
 
 ```bash
@@ -116,19 +115,19 @@ it can also be `username` or the name of a custom field.
 
 ```yaml
 credentials:
-  vaultwarden-ssh:
+  bitwarden-ssh:
     provider: bitwarden
     server: https://vault.example.com
     account: "00000000-0000-0000-0000-000000000000"
-    ref: "VAULTWARDEN-ITEM-ID"
+    ref: "BITWARDEN-ITEM-ID"
     field: password
 
 defaults:
-  password_credential: vaultwarden-ssh
+  password_credential: bitwarden-ssh
 ```
 
 Use a second named credential for a separate sudo or enable secret. If the
-Vaultwarden item changed in another client, refresh the local CLI vault before
+Bitwarden item changed in another client, refresh the local CLI vault before
 running Retri:
 
 ```bash
@@ -167,7 +166,7 @@ credentials:
 ```
 
 Retri checks the cache before contacting the provider. This means a credential
-previously obtained from Bitwarden/Vaultwarden can still be used during a
+previously obtained from Bitwarden can still be used during a
 network outage while the key is present and unexpired.
 
 `session-keyring` is Linux-only and uses the kernel API directly. If `ttl` is omitted it
