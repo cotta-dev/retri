@@ -27,8 +27,8 @@
 #   env        environment variable named by ref
 #   literal    value from value (mainly for migration/testing; plaintext is discouraged)
 #   keyring    existing Linux session keyring user key named by ref (native Linux API)
-#   bitwarden  Bitwarden CLI item named by ref; works with Bitwarden or Vaultwarden
-#              depending on `bw config server` (requires bw and an unlocked vault)
+#   bitwarden  Bitwarden CLI item named by ref; server selected by `bw config server`
+#              (requires bw and an unlocked vault)
 #
 # Examples (do not put real secrets in this file):
 #   prompt:
