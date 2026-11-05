@@ -149,7 +149,7 @@ credentials:
     value: test-password
 ```
 
-## Session-keyring cache
+## Linux keyring cache
 
 Caching is independent of the provider:
 
@@ -169,13 +169,41 @@ Retri checks the cache before contacting the provider. This means a credential
 previously obtained from Bitwarden can still be used during a
 network outage while the key is present and unexpired.
 
-`session-keyring` is Linux-only and uses the kernel API directly. If `ttl` is omitted it
-defaults to 8 hours. No persistent on-disk cache is created.
+`session-keyring` and `user-keyring` are Linux-only and use the kernel API
+directly. If `ttl` is omitted it defaults to 8 hours. No persistent on-disk cache
+is created.
 
 If an explicitly configured provider fails and no valid cache entry exists,
 Retri returns an error instead of silently changing to another provider.
 Credentials that are not configured at all retain Retri's existing hidden
 fallback prompt behavior (which can be disabled as described below).
+
+### Sharing across tmux panes with `user-keyring`
+
+Explicitly select `user-keyring` to reuse credentials across tmux panes and
+login sessions. It addresses the UID's user keyring directly, so a revoked
+inherited session keyring does not require starting a replacement shell.
+
+```yaml
+credentials:
+  default-sudo:
+    provider: prompt
+    prompt: "Default sudo password"
+    cache:
+      backend: user-keyring
+      ttl: 8h
+
+defaults:
+  secret_credential: default-sudo
+```
+
+This shares credentials with other processes and login sessions using the same
+UID; values may remain after logout until their TTL expires. This broader scope
+requires explicit selection: Retri never switches to it automatically. Both
+backends retain owner-only permissions, TTL limits of 1s through 24h, no TTL
+extension on reads, and no plaintext disk cache. Backend identities are separate:
+switching backends requires acquisition in the new store, while the old entry
+expires at its original TTL. Initialization, refresh, and clear support both.
 
 ## Disabling password prompts and preparing the cache
 
@@ -225,16 +253,16 @@ SSH connection, starts no shell, creates no session logs or initial config files
 and skips update checks. It explicitly permits credential input even when
 `prompt_password` / `prompt_secret` is `false`.
 
-Only selected named credentials with `cache.backend: session-keyring` are
-initialized. Uncached credentials, direct `password` / `secret`, legacy environment
+Only selected named credentials with `cache.backend: session-keyring` or
+`user-keyring` are initialized. Uncached credentials, direct `password` / `secret`, legacy environment
 fallbacks, and `-p` / `-s` overrides are skipped without input, acquisition or storage.
 If none qualify, Retri prints an informational message and exits successfully
 with code `0`. Configuration errors and failures to acquire or store selected
-cached credentials remain errors. Linux Session Keyring is required when there
+cached credentials remain errors. Linux keyring support is required when there
 are eligible credentials; a `prompt` provider also requires terminal stdin.
 Other providers retain their existing
 dependencies and connection requirements. Secrets are stored in the current
-user's session keyring without a plaintext disk cache.
+user's selected Linux keyring without a plaintext disk cache.
 
 Valid cache entries are reused without extending their TTL. Add
 `--credential-cache-refresh` to reacquire values, or use

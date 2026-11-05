@@ -113,3 +113,28 @@ func TestCacheMetadataDoesNotHashLiteralSecret(t *testing.T) {
 		t.Fatal("public metadata depends on literal secret")
 	}
 }
+
+func TestCacheBackendsHaveSeparateIdentities(t *testing.T) {
+	c := &keyringCache{keys: &memoryKeys{data: make(map[string][]byte)}, now: time.Now}
+	session := config.CredentialSpec{Provider: "prompt", Cache: config.CredentialCacheConfig{Backend: "session-keyring"}}
+	user := session
+	user.Cache.Backend = " USER-KEYRING "
+	if cacheDescription("config", "shared", session) == cacheDescription("config", "shared", user) {
+		t.Fatal("cache backends share an identity")
+	}
+	if err := c.Put("config", "shared", session, "session-value"); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := c.Get("config", "shared", user); err != nil || found {
+		t.Fatal("user backend read session cache", err)
+	}
+	if err := c.Put("config", "shared", user, "user-value"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Delete("config", "shared", user); err != nil {
+		t.Fatal(err)
+	}
+	if got, found, err := c.Get("config", "shared", session); err != nil || !found || got != "session-value" {
+		t.Fatal("clearing user cache affected session cache", err)
+	}
+}

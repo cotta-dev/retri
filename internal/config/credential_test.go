@@ -71,6 +71,8 @@ func TestRejectInvalidCredentialDefinitions(t *testing.T) {
 		{Provider: "bitwarden", Ref: "item", Cache: CredentialCacheConfig{Backend: "session-keyring"}},
 		{Provider: "prompt", Cache: CredentialCacheConfig{Backend: "session-keyring", TTL: "1ms"}},
 		{Provider: "prompt", Cache: CredentialCacheConfig{Backend: "session-keyring", TTL: "25h"}},
+		{Provider: "prompt", Cache: CredentialCacheConfig{Backend: "user-keyring", TTL: "25h"}},
+		{Provider: "bitwarden", Ref: "item", Cache: CredentialCacheConfig{Backend: "user-keyring"}},
 	} {
 		cfg := Config{Credentials: map[string]CredentialSpec{"test": spec}}
 		if err := cfg.Validate(); err == nil {
@@ -156,6 +158,12 @@ func TestValidateCredentialCacheTTL(t *testing.T) {
 	}}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+	spec := cfg.Credentials["sudo"]
+	spec.Cache.Backend = "user-keyring"
+	cfg.Credentials["sudo"] = spec
+	if err := cfg.Validate(); err != nil {
+		t.Fatal("user keyring rejected", err)
 	}
 }
 

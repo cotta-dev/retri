@@ -146,7 +146,7 @@ credentials:
     value: test-password
 ```
 
-## Session Keyring cache
+## Linux keyring cache
 
 Cache は provider とは独立しています。
 
@@ -166,12 +166,39 @@ Retri は provider にアクセスする前に cache を確認します。その
 Bitwarden から取得済みであれば、ネットワーク断や Bitwarden 停止中でも
 key が残っていて TTL 内であれば利用できます。
 
-`session-keyring` は Linux のみ対応し、kernel APIを直接利用します。`ttl` 省略時は8時間です。
+`session-keyring` と `user-keyring` は Linux のみ対応し、kernel APIを直接利用します。
+`ttl` 省略時は8時間です。
 ディスク上への永続 cache は作成しません。
 
 明示的に指定した provider が失敗し、有効な cache も存在しない場合、Retri は別の
 provider へ勝手に切り替えずエラーを返します。一方、credential 自体が未設定の場合は、
 従来どおり非表示の fallback prompt を利用します（以下の設定で抑止できます）。
+
+### tmux で共有する `user-keyring`
+
+tmux の別ペイン・再接続後でも再利用する場合は、明示的に `user-keyring` を選択できます。
+ログイン時の Session Keyring が失効していても、UID に対応する User Keyring を直接
+利用するため、shell を作り直す必要はありません。
+
+```yaml
+credentials:
+  default-sudo:
+    provider: prompt
+    prompt: "Default sudo password"
+    cache:
+      backend: user-keyring
+      ttl: 8h
+
+defaults:
+  secret_credential: default-sudo
+```
+
+同じ UID の別ログインや他のプロセスからも共有でき、ログアウト後も TTL まで残る場合が
+あります。通常の `session-keyring` より共有範囲が広いため、自動切り替えはしません。
+所有者限定の権限、TTL（1s〜24h）、平文のディスク cache を作らない条件は共通です。
+読み出しで TTL は延長しません。backend ごとに cache の識別子を分離しており、切り替えた
+場合は新しい保存先で取得し直します。元の cache は元の TTL で失効します。
+`--credential-cache-init`、refresh、clear は両 backend に対応します。
 
 ## パスワード入力の抑止と cache の事前作成
 
@@ -218,14 +245,14 @@ retri -c config.yaml -i  # --credential-cache-init の短縮形
 SSH 接続、shell 起動、セッションログ作成、更新確認、初期設定ファイル生成は行いません。
 明示的な初期化なので `prompt_password` / `prompt_secret` が `false` でも入力できます。
 
-選択された参照のうち、`cache.backend: session-keyring` を設定した名前付き credential
-だけを初期化します。cache 未設定の credential、`password` / `secret` の直接指定、
+選択された参照のうち、`cache.backend: session-keyring` または `user-keyring` を設定した
+名前付き credential だけを初期化します。cache 未設定の credential、`password` / `secret` の直接指定、
 legacy 環境変数、`-p` / `-s` の上書き値は入力・取得・保存せずスキップします。
 対象が1件もない場合は案内メッセージを表示し、終了コード `0` で正常終了します。
-対象がある場合は Linux Session Keyring が必要で、`prompt` provider は terminal stdin を
+対象がある場合は Linux keyring が必要で、`prompt` provider は terminal stdin を
 必要とします。設定の不備や対象 credential の取得・保存失敗は引き続きエラーです。
 他の provider を選んだ場合は、その既存の依存関係・接続条件が適用されます。
-秘密情報は現在のユーザーの Session Keyring に保存し、平文のディスク cache は作りません。
+秘密情報は選択した Linux keyring に保存し、平文のディスク cache は作りません。
 
 有効な cache は再利用し、期限を延長しません。取り直す場合は
 `--credential-cache-init --credential-cache-refresh`、破棄する場合は

@@ -1,6 +1,25 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
+
+const (
+	CacheBackendSessionKeyring = "session-keyring"
+	CacheBackendUserKeyring    = "user-keyring"
+)
+
+// IsKeyringCacheBackend reports whether a backend retains credentials between
+// invocations. Session and user caches have distinct sharing scopes.
+func IsKeyringCacheBackend(backend string) bool {
+	switch strings.ToLower(strings.TrimSpace(backend)) {
+	case CacheBackendSessionKeyring, CacheBackendUserKeyring:
+		return true
+	default:
+		return false
+	}
+}
 
 // ResolveCredentialPrompts selects prompt policy independently of credential
 // sources. Nil inherits; the default for both fields is true.

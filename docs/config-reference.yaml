@@ -56,6 +56,11 @@
 #                    value can survive multiple retri invocations in the same
 #                    login session and can be used while the upstream provider
 #                    is unavailable. Default TTL: 8h; allowed 1s..24h. TTL limits reuse by later runs.
+#   user-keyring     Linux user keyring cache shared by the same UID across
+#                    tmux panes and login sessions, including when an inherited
+#                    session keyring is revoked. Same TTL limits and owner-only
+#                    permissions; values may remain after logout until expiry.
+#                    This broader sharing scope requires explicit selection.
 # Cache errors fail explicitly; no provider fallback. See docs/credentials.md
 # for profile binding, refresh/clear, permissions and snapshot semantics.
 # ===========================================================================

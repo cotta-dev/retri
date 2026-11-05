@@ -11,11 +11,11 @@ import (
 	"github.com/cotta-dev/retri/internal/config"
 )
 
-const defaultSessionCacheTTL = 8 * time.Hour
+const defaultCredentialCacheTTL = 8 * time.Hour
 const maxCachePayload = 32767
 const pendingCachePayload = "retri-cache-pending-v2"
 
-type sessionCache interface {
+type credentialCache interface {
 	Get(string, string, config.CredentialSpec) (string, bool, error)
 	Put(string, string, config.CredentialSpec, string) error
 	Delete(string, string, config.CredentialSpec) error
@@ -28,11 +28,19 @@ type keyStore interface {
 }
 
 type keyringCache struct {
+	// Tests can inject a store; normal operation selects it from each spec.
 	keys keyStore
 	now  func() time.Time
 }
 
-func newSessionCache() sessionCache { return &keyringCache{keys: newKeyStore(), now: time.Now} }
+func newCredentialCache() credentialCache { return &keyringCache{now: time.Now} }
+
+func (c *keyringCache) store(spec config.CredentialSpec) keyStore {
+	if c.keys != nil {
+		return c.keys
+	}
+	return newKeyStore(spec.Cache.Backend)
+}
 
 type cacheEntry struct {
 	Version     int
@@ -44,7 +52,7 @@ type cacheEntry struct {
 
 func cacheTTL(spec config.CredentialSpec) (time.Duration, error) {
 	if spec.Cache.TTL == "" {
-		return defaultSessionCacheTTL, nil
+		return defaultCredentialCacheTTL, nil
 	}
 	d, err := time.ParseDuration(spec.Cache.TTL)
 	if err != nil || d < time.Second || d > 24*time.Hour {
@@ -67,6 +75,7 @@ func normalizedSpec(spec config.CredentialSpec) config.CredentialSpec {
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
 func cacheDescription(namespace, name string, spec config.CredentialSpec) string {
+	specCacheBackend := spec.Cache.Backend
 	spec = normalizedSpec(spec)
 	// Literal values never appear in public metadata, even as a guessable hash.
 	spec.Value = ""
@@ -74,7 +83,11 @@ func cacheDescription(namespace, name string, spec config.CredentialSpec) string
 		Namespace, Name string
 		Source          config.CredentialSpec
 	}{namespace, name, spec})
-	return "retri:credential:v2:" + digest(b)
+	prefix := "retri:credential:v2:"
+	if strings.EqualFold(strings.TrimSpace(specCacheBackend), config.CacheBackendUserKeyring) {
+		prefix = "retri:credential:user:v2:"
+	}
+	return prefix + digest(b)
 }
 
 func sourceFingerprint(spec config.CredentialSpec) string {
@@ -88,7 +101,7 @@ func (c *keyringCache) Get(namespace, name string, spec config.CredentialSpec) (
 	if err != nil {
 		return "", false, err
 	}
-	payload, found, err := c.keys.Read(cacheDescription(namespace, name, spec))
+	payload, found, err := c.store(spec).Read(cacheDescription(namespace, name, spec))
 	defer clear(payload)
 	if err != nil || !found {
 		return "", false, err
@@ -128,9 +141,9 @@ func (c *keyringCache) Put(namespace, name string, spec config.CredentialSpec, v
 	if len(payload) > maxCachePayload {
 		return fmt.Errorf("credential exceeds cache size limit")
 	}
-	return c.keys.Write(cacheDescription(namespace, name, spec), payload, ttl)
+	return c.store(spec).Write(cacheDescription(namespace, name, spec), payload, ttl)
 }
 
 func (c *keyringCache) Delete(namespace, name string, spec config.CredentialSpec) error {
-	return c.keys.Delete(cacheDescription(namespace, name, spec))
+	return c.store(spec).Delete(cacheDescription(namespace, name, spec))
 }
