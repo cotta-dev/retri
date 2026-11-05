@@ -36,7 +36,7 @@ type optionCompletion struct {
 }
 
 var completionOptions = []optionCompletion{
-	{Long: "--credential-cache-init", Description: "Initialize selected SSH/sudo credential caches without SSH or session logs"},
+	{Short: "-i", Long: "--credential-cache-init", Description: "Initialize selected SSH/sudo credential caches without SSH or session logs"},
 	{Long: "--credential-cache-refresh", Description: "Refresh selected credential caches from their configured sources"},
 	{Long: "--credential-cache-clear", Description: "Clear current credential cache definitions and exit"},
 	{Short: "-c", Long: "--config", Description: "Config file path (default: ~/.config/retri/config.yaml)", ValueKind: "file", ValueHint: "<filepath>", TakesValue: true},

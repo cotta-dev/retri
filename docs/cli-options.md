@@ -29,7 +29,7 @@ Application Options:
   -p, --password=         SSH Password (default: $RETRI_SSH_PASSWORD or config)
   -s, --secret=           Sudo Secret (default: $RETRI_SSH_SECRET or config)
   -e, --exit-command=     Exit command for interactive sessions (default: exit)
-      --credential-cache-init
+  -i, --credential-cache-init
                           Initialize selected SSH/sudo credential caches and exit; no session logs or SSH (Linux Session Keyring required)
       --credential-cache-refresh
                           Discard selected credential caches and obtain fresh values from their configured sources

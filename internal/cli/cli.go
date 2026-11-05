@@ -50,7 +50,7 @@ type Options struct {
 	ExitCommand            string `short:"e" long:"exit-command" description:"Exit command for interactive sessions (default: exit)"`
 	CredentialCacheRefresh bool   `long:"credential-cache-refresh" description:"Discard selected credential caches and obtain fresh values from their configured sources"`
 	CredentialCacheClear   bool   `long:"credential-cache-clear" description:"Clear this config's current credential cache entries and exit"`
-	CredentialCacheInit    bool   `long:"credential-cache-init" description:"Initialize selected SSH/sudo credential caches and exit; no session logs or SSH (Linux Session Keyring required)"`
+	CredentialCacheInit    bool   `short:"i" long:"credential-cache-init" description:"Initialize selected SSH/sudo credential caches and exit; no session logs or SSH (Linux Session Keyring required)"`
 
 	// Misc
 	Completion string `long:"completion" choice:"bash" choice:"zsh" choice:"fish" description:"Generate shell completion script (bash, zsh, or fish)"`

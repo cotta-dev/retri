@@ -55,7 +55,7 @@ func TestCredentialCacheInitWithoutSSHOrLogs(t *testing.T) {
 			t.Fatal(err)
 		}
 		path := os.Getenv("RETRI_TEST_CONFIG")
-		os.Args = []string{"retri", "-c", path, "--credential-cache-init"}
+		os.Args = []string{"retri", "-c", path, "-i"}
 		Run("test", nil, "")
 		// Confirm a later normal resolution reads the cache despite disabled
 		// prompts and a removed source environment variable.

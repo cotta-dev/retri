@@ -214,9 +214,10 @@ Prepare the credentials in the same Linux session before normal execution:
 retri -c config.yaml --credential-cache-init
 retri -c config.yaml --credential-cache-init -H myserver
 retri -c config.yaml --credential-cache-init -g web
+retri -c config.yaml -i  # short form of --credential-cache-init
 ```
 
-`--credential-cache-init` prepares the selected SSH/sudo credential caches and
+`-i` / `--credential-cache-init` prepares the selected SSH/sudo credential caches and
 exits. Without a target, it selects only references in `defaults`. Use `-H`,
 `-g`, or one positional hostname to select host-specific configuration. Commands
 are not required, and configured commands are not executed. This mode makes no

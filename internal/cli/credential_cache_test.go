@@ -88,6 +88,8 @@ func TestCredentialCacheInitCLIValidationAndHelp(t *testing.T) {
 		{"update-conflict", []string{"--credential-cache-init", "--update"}, "cannot be combined", false},
 		{"target-conflict", []string{"--credential-cache-init", "-H", "node", "extra"}, "only one target", false},
 		{"no-credentials", []string{"--credential-cache-init"}, "no named SSH/sudo credentials", false},
+		{"short-no-credentials", []string{"-i"}, "no named SSH/sudo credentials", false},
+		{"short-command-conflict", []string{"-i", "--command", "uptime"}, "cannot be combined", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()

@@ -209,9 +209,10 @@ credential 未設定時は入力を省略します。名前付き `prompt` provi
 retri -c config.yaml --credential-cache-init
 retri -c config.yaml --credential-cache-init -H myserver
 retri -c config.yaml --credential-cache-init -g web
+retri -c config.yaml -i  # --credential-cache-init の短縮形
 ```
 
-`--credential-cache-init` は選択した SSH / sudo credential の cache を準備して終了します。
+`-i` / `--credential-cache-init` は選択した SSH / sudo credential の cache を準備して終了します。
 対象省略時は `defaults` の参照だけを選び、`-H`、`-g`、または1つの位置引数でホスト別の
 設定を選べます。コマンド指定は不要で、設定済みのコマンドも実行しません。
 SSH 接続、shell 起動、セッションログ作成、更新確認、初期設定ファイル生成は行いません。
