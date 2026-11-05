@@ -50,6 +50,7 @@ type Options struct {
 	ExitCommand            string `short:"e" long:"exit-command" description:"Exit command for interactive sessions (default: exit)"`
 	CredentialCacheRefresh bool   `long:"credential-cache-refresh" description:"Discard selected credential caches and obtain fresh values from their configured sources"`
 	CredentialCacheClear   bool   `long:"credential-cache-clear" description:"Clear this config's current credential cache entries and exit"`
+	CredentialCacheInit    bool   `long:"credential-cache-init" description:"Initialize selected SSH/sudo credential caches and exit; no session logs or SSH (Linux Session Keyring required)"`
 
 	// Misc
 	Completion string `long:"completion" choice:"bash" choice:"zsh" choice:"fish" description:"Generate shell completion script (bash, zsh, or fish)"`
@@ -76,6 +77,11 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 		"  retri                  Start local work session recording\n" +
 		"  retri <hostname>       SSH to host and record the session\n" +
 		"  retri [OPTIONS]        Execute commands and collect logs\n\n" +
+		"  retri --credential-cache-init [-H host | -g group]\n" +
+		"                        Cache named credentials only (default: defaults section)\n" +
+		"                        Example: retri -c config.yaml --credential-cache-init\n" +
+		"                        Requires cache.backend: session-keyring; stores secrets\n" +
+		"                        in the current user's Linux session keyring (default TTL: 8h).\n\n" +
 		"  Note: <hostname> is ignored when -H, -g, --command, or -f is specified."
 
 	remaining, err := parser.Parse()
@@ -89,6 +95,9 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	if opts.Version {
 		fmt.Printf("%s version %s\n", config.AppName, version)
 		os.Exit(0)
+	}
+	if err := validateCredentialCacheInitOptions(opts, remaining); err != nil {
+		log.Fatalf("[ERROR] %v", err)
 	}
 
 	if opts.Update {
@@ -120,7 +129,7 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	commandsDir := filepath.Join(configDir, config.CommandsDirName)
 
 	// Create default config if it doesn't exist
-	if _, err := os.Stat(defaultConfigPath); os.IsNotExist(err) {
+	if _, err := os.Stat(defaultConfigPath); !opts.CredentialCacheInit && os.IsNotExist(err) {
 		if err := config.CreateDefault(defaultConfigPath, defaultConfigContent); err != nil {
 			log.Printf("[WARNING] Failed to create default config: %v", err)
 		} else {
@@ -128,7 +137,7 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 		}
 	}
 	// Create commands directory
-	if _, err := os.Stat(commandsDir); os.IsNotExist(err) {
+	if _, err := os.Stat(commandsDir); !opts.CredentialCacheInit && os.IsNotExist(err) {
 		if err := os.MkdirAll(commandsDir, 0700); err != nil {
 			log.Printf("[WARNING] Failed to create commands directory: %v", err)
 		}
@@ -147,6 +156,13 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 	}
 	if _, err := logencoding.Lookup(opts.LogEncoding); err != nil {
 		log.Fatalf("[ERROR] Invalid --log-encoding: %v", err)
+	}
+	if opts.CredentialCacheInit {
+		if err := initializeCredentialCache(cfg, opts, remaining); err != nil {
+			log.Fatalf("[ERROR] Failed to initialize credential cache: %v", err)
+		}
+		fmt.Println("Credential cache initialized; no SSH connection or session log created.")
+		return
 	}
 	if opts.CredentialCacheClear {
 		r := credentials.NewResolver(cfg.Credentials)

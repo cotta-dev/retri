@@ -171,7 +171,63 @@ key が残っていて TTL 内であれば利用できます。
 
 明示的に指定した provider が失敗し、有効な cache も存在しない場合、Retri は別の
 provider へ勝手に切り替えずエラーを返します。一方、credential 自体が未設定の場合は、
-従来どおり非表示の fallback prompt を利用します。
+従来どおり非表示の fallback prompt を利用します（以下の設定で抑止できます）。
+
+## パスワード入力の抑止と cache の事前作成
+
+`prompt_password: false` で SSH パスワード、`prompt_secret: false` で sudo / enable
+secret の入力を抑止します。両方とも既定値は `true` で、`defaults`、`groups`、
+`device_types`、`hosts` に設定できます。通常の優先順位で継承し、上位の `true` で
+再び許可できます。
+
+```yaml
+credentials:
+  login:
+    provider: prompt
+    prompt: "SSH password"
+    cache: {backend: session-keyring, ttl: 8h}
+  sudo:
+    provider: prompt
+    prompt: "Sudo password"
+    cache: {backend: session-keyring, ttl: 8h}
+
+defaults:
+  password_credential: login
+  secret_credential: sudo
+  prompt_password: false
+  prompt_secret: false
+```
+
+credential 未設定時は入力を省略します。名前付き `prompt` provider は有効な cache が
+あれば利用し、なければ入力せずエラーにします。設定済みの値、環境変数、他の provider
+の利用は継続します。対象は Retri の自動実行時の認証情報入力です。
+`retri <hostname>` やローカル記録セッション内の SSH / sudo 自体の対話入力は制御しません。
+
+上記の設定では、同じ Linux セッションから先に以下を実行します。
+
+```bash
+retri -c config.yaml --credential-cache-init
+retri -c config.yaml --credential-cache-init -H myserver
+retri -c config.yaml --credential-cache-init -g web
+```
+
+`--credential-cache-init` は選択した SSH / sudo credential の cache を準備して終了します。
+対象省略時は `defaults` の参照だけを選び、`-H`、`-g`、または1つの位置引数でホスト別の
+設定を選べます。コマンド指定は不要で、設定済みのコマンドも実行しません。
+SSH 接続、shell 起動、セッションログ作成、更新確認、初期設定ファイル生成は行いません。
+明示的な初期化なので `prompt_password` / `prompt_secret` が `false` でも入力できます。
+
+選択された参照は名前付き credential で、`cache.backend: session-keyring` が必要です。
+`password` / `secret` の直接指定、legacy 環境変数、`-p` / `-s` の上書き値は保存しません。
+Linux Session Keyring が必要で、`prompt` provider は terminal stdin を必要とします。
+他の provider を選んだ場合は、その既存の依存関係・接続条件が適用されます。
+秘密情報は現在のユーザーの Session Keyring に保存し、平文のディスク cache は作りません。
+
+有効な cache は再利用し、期限を延長しません。取り直す場合は
+`--credential-cache-init --credential-cache-refresh`、破棄する場合は
+`--credential-cache-clear` を使用します。複数 credential の途中で取得に失敗した場合、
+それまでに保存した cache は残ります。`--command`、`-f`、`--update`、
+`--credential-cache-clear` との同時指定はエラーです。
 
 ## セキュリティ境界
 

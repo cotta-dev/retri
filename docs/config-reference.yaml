@@ -100,6 +100,11 @@ defaults:
   password_credential: "" # [optional] named credential; exclusive with password in this layer
   secret: ""                # [optional] default: none  — sudo / enable secret. Prefer ${VAR}
   secret_credential: ""   # [optional] named credential; exclusive with secret in this layer
+  prompt_password: true    # [optional] default: true — allow Retri SSH credential prompts
+  prompt_secret: true      # [optional] default: true — allow Retri sudo/enable credential prompts
+                           # false suppresses fallback and named prompt providers; valid cache still works
+                           # inherited by groups/device_types/hosts; explicit true or false overrides
+                           # does not control prompts in interactive SSH/local recording sessions
   command: ""               # [optional] default: none  — single command (ignored if commands is set)
   commands: []              # [optional] default: []    — list of commands to run
   command_file: ""          # [optional] default: none  — path to file with commands (one per line)

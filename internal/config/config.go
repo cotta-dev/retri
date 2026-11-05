@@ -8,6 +8,8 @@ type CommonFields struct {
 	PasswordCredential string   `yaml:"password_credential"`
 	Secret             string   `yaml:"secret"`
 	SecretCredential   string   `yaml:"secret_credential"`
+	PromptPassword     *bool    `yaml:"prompt_password"`
+	PromptSecret       *bool    `yaml:"prompt_secret"`
 	Command            string   `yaml:"command"`
 	Commands           []string `yaml:"commands"`
 	CommandFile        string   `yaml:"command_file"`

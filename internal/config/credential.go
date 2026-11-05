@@ -2,6 +2,27 @@ package config
 
 import "os"
 
+// ResolveCredentialPrompts selects prompt policy independently of credential
+// sources. Nil inherits; the default for both fields is true.
+func ResolveCredentialPrompts(rh ResolvedHost, defaults GlobalOptions) (password, secret bool) {
+	password, secret = true, true
+	apply := func(fields CommonFields) {
+		if fields.PromptPassword != nil {
+			password = *fields.PromptPassword
+		}
+		if fields.PromptSecret != nil {
+			secret = *fields.PromptSecret
+		}
+	}
+	apply(defaults.CommonFields)
+	for _, group := range rh.GroupConfigs {
+		apply(group.CommonFields)
+	}
+	apply(rh.DeviceConfig.CommonFields)
+	apply(rh.HostConfig.CommonFields)
+	return
+}
+
 // CredentialSource identifies either a literal credential value or a named
 // credential definition. Exactly one field should be set.
 type CredentialSource struct {

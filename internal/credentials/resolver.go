@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -15,6 +16,8 @@ type result struct {
 	value string
 	err   error
 }
+
+var errPromptDisabled = errors.New("terminal prompt is disabled; initialize the credential cache first")
 
 // Resolver owns one invocation's snapshot. Successes and failures are shared
 // per name. Session-cache TTL governs reuse by subsequent invocations.
@@ -45,21 +48,37 @@ func (r *Resolver) Configure(namespace string, refresh bool, env []string) {
 }
 
 func (r *Resolver) Resolve(name string) (string, error) {
-	r.mu.Lock()
-	if previous := r.values[name]; previous != nil {
-		r.mu.Unlock()
-		<-previous.done
-		return previous.value, previous.err
-	}
-	entry := &result{done: make(chan struct{})}
-	r.values[name] = entry
-	r.mu.Unlock()
-	entry.value, entry.err = r.resolve(name)
-	close(entry.done)
-	return entry.value, entry.err
+	return r.ResolveWithPrompt(name, true)
 }
 
-func (r *Resolver) resolve(name string) (string, error) {
+// ResolveWithPrompt can forbid terminal input while still accepting a cached
+// prompt credential. Policy failures do not poison resolutions allowing input.
+func (r *Resolver) ResolveWithPrompt(name string, allowPrompt bool) (string, error) {
+	for {
+		r.mu.Lock()
+		if previous := r.values[name]; previous != nil {
+			r.mu.Unlock()
+			<-previous.done
+			if allowPrompt && errors.Is(previous.err, errPromptDisabled) {
+				continue
+			}
+			return previous.value, previous.err
+		}
+		entry := &result{done: make(chan struct{})}
+		r.values[name] = entry
+		r.mu.Unlock()
+		entry.value, entry.err = r.resolve(name, allowPrompt)
+		if errors.Is(entry.err, errPromptDisabled) {
+			r.mu.Lock()
+			delete(r.values, name)
+			r.mu.Unlock()
+		}
+		close(entry.done)
+		return entry.value, entry.err
+	}
+}
+
+func (r *Resolver) resolve(name string, allowPrompt bool) (string, error) {
 	spec, ok := r.specs[name]
 	if !ok {
 		return "", fmt.Errorf("credential %q is not defined", name)
@@ -82,6 +101,9 @@ func (r *Resolver) resolve(name string) (string, error) {
 				return value, nil
 			}
 		}
+	}
+	if !allowPrompt && strings.EqualFold(strings.TrimSpace(spec.Provider), "prompt") {
+		return "", fmt.Errorf("credential %q: %w", name, errPromptDisabled)
 	}
 	value, err := r.resolveProvider(name, spec)
 	if err != nil {
