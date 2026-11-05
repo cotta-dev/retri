@@ -291,6 +291,27 @@ value keyにも公開前に権限、公開後にtimeoutを設定します（user
 特権によるメモリ参照は防御範囲外です。一時byte bufferは可能な範囲で消去しますが、
 完全なメモリ消去は保証しません。
 
+### Session Keyring が失効している場合
+
+親の Session Keyring 自体が失効している場合、Retri は cache 未作成として扱わず、
+パスワード入力前にエラーと復旧方法を表示します。ログアウト時の PAM の処理などで
+keyring が失効し、長時間動く shell や tmux 等が古い keyring を継承している場合があります。
+
+新しいログインセッションを使用するか、`keyctl` がある場合は手元の端末で新しい shell
+を起動してください。既存の keyring を削除・失効させる操作は不要です。
+
+```bash
+keyctl session - bash
+keyctl id @s
+retri -c config.yaml -i -H myserver
+```
+
+`keyctl id @s` が失敗した場合はそこで止めてください。成功後は、cache の作成と後続の
+Retri 実行をすべてこの新しい shell 内で行います。終了は `exit` で元の shell に戻ります。
+Retri が自身のプロセスだけで keyring を作り直しても、親 shell からの後続実行とは共有
+できないため、自動的な置き換えは行いません。`keyctl` はこの復旧手順用であり、通常の
+Retri 実行の依存関係ではありません。
+
 v2 cacheはこの未マージPRの旧実装が書いたentryを利用しません。旧実装を実行済みなら
 keyutilsで旧`retri:credential:` keyを確認・削除してください。旧timeout設定失敗に
 より期限なしentryが残っている可能性があります。

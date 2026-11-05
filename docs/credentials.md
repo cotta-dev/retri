@@ -311,6 +311,29 @@ cache is written. Go strings/runtime copies, swap, crash dumps and privileged
 memory inspection are outside this protection; temporary byte buffers are
 cleared where practical, without claiming guaranteed memory erasure.
 
+### Revoked or expired session keyring
+
+If the inherited session keyring itself is revoked or expired, Retri reports an
+error with recovery instructions before requesting a password. This is distinct
+from a missing or expired cache entry. PAM can revoke keyrings on logout, leaving
+long-running shells or tmux processes with an unusable inherited keyring.
+
+Use a fresh login session, or, if `keyctl` is available, start a new shell from
+your own terminal. No deletion or revocation of existing keyrings is needed:
+
+```bash
+keyctl session - bash
+keyctl id @s
+retri -c config.yaml -i -H myserver
+```
+
+Stop if `keyctl id @s` fails. After it succeeds, initialize the cache and run
+subsequent Retri commands inside this new shell. Use `exit` to return to the
+original shell. Retri does not replace its session keyring automatically: a
+replacement inside Retri alone would not be shared with subsequent invocations
+from the parent shell. `keyctl` is only used for this recovery procedure, not
+required for ordinary Retri operation.
+
 The v2 cache ignores entries written by earlier versions of this unmerged PR.
 If you ran those versions, inspect and remove their `retri:credential:` keys
 with keyutils; an earlier failed timeout could have left an unbounded entry.

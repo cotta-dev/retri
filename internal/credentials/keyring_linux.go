@@ -20,17 +20,31 @@ func missingKey(err error) bool {
 	return errors.Is(err, unix.ENOKEY) || errors.Is(err, unix.EKEYEXPIRED) || errors.Is(err, unix.EKEYREVOKED)
 }
 
+// A missing/expired cache entry is a miss, but an unusable session ring is not.
+// Never replace the inherited ring here: a process-local replacement would not
+// be shared with later Retri invocations from the parent shell.
+func checkSessionKeyring() error {
+	_, err := unix.KeyctlGetKeyringID(unix.KEY_SPEC_SESSION_KEYRING, false)
+	if err == nil || errors.Is(err, unix.ENOKEY) {
+		return nil
+	}
+	if errors.Is(err, unix.EKEYREVOKED) || errors.Is(err, unix.EKEYEXPIRED) {
+		return fmt.Errorf("session keyring is revoked or expired; start a fresh login session or run \"keyctl session - bash\" and retry in that shell: %w", err)
+	}
+	return fmt.Errorf("check session keyring: %w", err)
+}
+
 func (linuxKeys) Read(description string) ([]byte, bool, error) {
 	ring, err := unix.KeyctlSearch(unix.KEY_SPEC_SESSION_KEYRING, "keyring", description, 0)
 	if missingKey(err) {
-		return nil, false, nil
+		return nil, false, checkSessionKeyring()
 	}
 	if err != nil {
 		return nil, false, fmt.Errorf("search session keyring: %w", err)
 	}
 	id, err := unix.KeyctlSearch(ring, "user", "value", 0)
 	if missingKey(err) {
-		return nil, false, nil
+		return nil, false, checkSessionKeyring()
 	}
 	if err != nil {
 		return nil, false, fmt.Errorf("search cache value: %w", err)
@@ -97,7 +111,13 @@ func (linuxKeys) Write(description string, payload []byte, ttl time.Duration) er
 	// the old link. Concurrent writers therefore never modify each other's key.
 	return writeKeyPayload(payload, ttl,
 		func() (int, error) {
-			return unix.AddKey("keyring", description, nil, unix.KEY_SPEC_SESSION_KEYRING)
+			id, err := unix.AddKey("keyring", description, nil, unix.KEY_SPEC_SESSION_KEYRING)
+			if missingKey(err) {
+				if sessionErr := checkSessionKeyring(); sessionErr != nil {
+					return 0, sessionErr
+				}
+			}
+			return id, err
 		},
 		func(id int) error { return unix.KeyctlSetperm(id, 0x003f0000) },
 		func(id, seconds int) error {
@@ -136,7 +156,7 @@ func revokeKey(id int) error { _, err := unix.KeyctlInt(unix.KEYCTL_REVOKE, id, 
 func (linuxKeys) Delete(description string) error {
 	id, err := unix.KeyctlSearch(unix.KEY_SPEC_SESSION_KEYRING, "keyring", description, 0)
 	if missingKey(err) {
-		return nil
+		return checkSessionKeyring()
 	}
 	if err != nil {
 		return fmt.Errorf("search session keyring: %w", err)
@@ -159,7 +179,7 @@ func (linuxKeys) Delete(description string) error {
 func readSourceKey(description string) (string, bool, error) {
 	id, err := unix.KeyctlSearch(unix.KEY_SPEC_SESSION_KEYRING, "user", description, 0)
 	if missingKey(err) {
-		return "", false, nil
+		return "", false, checkSessionKeyring()
 	}
 	if err != nil {
 		return "", false, fmt.Errorf("search source key: %w", err)
