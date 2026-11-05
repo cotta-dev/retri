@@ -58,21 +58,18 @@ func credentialCacheInitNames(cfg config.Config, opts Options, remaining []strin
 	for _, target := range targets {
 		password, secret := config.ResolveCredentialSources(target, cfg.Defaults, opts.Password, opts.Secret)
 		for _, source := range []config.CredentialSource{password, secret} {
-			if !source.Set {
+			if source.Credential == "" {
 				continue
 			}
-			if source.Credential == "" {
-				return nil, fmt.Errorf("cache initialization requires named credentials; use password_credential/secret_credential instead of literal, environment or CLI overrides")
-			}
 			spec, ok := cfg.Credentials[source.Credential]
-			if !ok || !strings.EqualFold(strings.TrimSpace(spec.Cache.Backend), "session-keyring") {
-				return nil, fmt.Errorf("credential %q requires cache.backend: session-keyring", source.Credential)
+			if !ok {
+				return nil, fmt.Errorf("credential %q is not defined", source.Credential)
+			}
+			if !strings.EqualFold(strings.TrimSpace(spec.Cache.Backend), "session-keyring") {
+				continue
 			}
 			names[source.Credential] = true
 		}
-	}
-	if len(names) == 0 {
-		return nil, fmt.Errorf("no named SSH/sudo credentials selected; configure password_credential or secret_credential")
 	}
 	selected := make([]string, 0, len(names))
 	for name := range names {
@@ -82,10 +79,13 @@ func credentialCacheInitNames(cfg config.Config, opts Options, remaining []strin
 	return selected, nil
 }
 
-func initializeCredentialCache(cfg config.Config, opts Options, remaining []string) error {
+func initializeCredentialCache(cfg config.Config, opts Options, remaining []string) (int, error) {
 	names, err := credentialCacheInitNames(cfg, opts, remaining)
 	if err != nil {
-		return err
+		return 0, err
+	}
+	if len(names) == 0 {
+		return 0, nil
 	}
 	r := credentialresolver.NewResolver(cfg.Credentials)
 	defer r.Close()
@@ -94,10 +94,10 @@ func initializeCredentialCache(cfg config.Config, opts Options, remaining []stri
 	// execution disables them. Resolve reuses valid cache unless refresh is set.
 	for _, name := range names {
 		if _, err := r.Resolve(name); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return nil
+	return len(names), nil
 }
 
 func resolveTargetCredentials(targets []config.ResolvedHost, cfg config.Config, opts Options) ([]resolvedHostCredentials, error) {

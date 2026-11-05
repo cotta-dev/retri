@@ -81,7 +81,8 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 		"                        Cache named credentials only (default: defaults section)\n" +
 		"                        Example: retri -c config.yaml --credential-cache-init\n" +
 		"                        Requires cache.backend: session-keyring; stores secrets\n" +
-		"                        in the current user's Linux session keyring (default TTL: 8h).\n\n" +
+		"                        in the current user's Linux session keyring (default TTL: 8h).\n" +
+		"                        Other sources are skipped; no matches prints a message and exits.\n\n" +
 		"  Note: <hostname> is ignored when -H, -g, --command, or -f is specified."
 
 	remaining, err := parser.Parse()
@@ -158,10 +159,15 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 		log.Fatalf("[ERROR] Invalid --log-encoding: %v", err)
 	}
 	if opts.CredentialCacheInit {
-		if err := initializeCredentialCache(cfg, opts, remaining); err != nil {
+		count, err := initializeCredentialCache(cfg, opts, remaining)
+		if err != nil {
 			log.Fatalf("[ERROR] Failed to initialize credential cache: %v", err)
 		}
-		fmt.Println("Credential cache initialized; no SSH connection or session log created.")
+		if count == 0 {
+			fmt.Println("[INFO] No credentials with cache.backend: session-keyring selected; nothing to initialize.")
+		} else {
+			fmt.Printf("Credential cache initialized for %d credential(s); no SSH connection or session log created.\n", count)
+		}
 		return
 	}
 	if opts.CredentialCacheClear {

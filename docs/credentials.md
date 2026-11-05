@@ -225,10 +225,14 @@ SSH connection, starts no shell, creates no session logs or initial config files
 and skips update checks. It explicitly permits credential input even when
 `prompt_password` / `prompt_secret` is `false`.
 
-Selected sources must be named credentials with `cache.backend: session-keyring`.
-Direct `password` / `secret`, legacy environment fallbacks, and `-p` / `-s`
-overrides cannot be initialized. Linux Session Keyring is required; a `prompt`
-provider also requires terminal stdin. Other providers retain their existing
+Only selected named credentials with `cache.backend: session-keyring` are
+initialized. Uncached credentials, direct `password` / `secret`, legacy environment
+fallbacks, and `-p` / `-s` overrides are skipped without input, acquisition or storage.
+If none qualify, Retri prints an informational message and exits successfully
+with code `0`. Configuration errors and failures to acquire or store selected
+cached credentials remain errors. Linux Session Keyring is required when there
+are eligible credentials; a `prompt` provider also requires terminal stdin.
+Other providers retain their existing
 dependencies and connection requirements. Secrets are stored in the current
 user's session keyring without a plaintext disk cache.
 

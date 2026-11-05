@@ -218,9 +218,12 @@ retri -c config.yaml -i  # --credential-cache-init の短縮形
 SSH 接続、shell 起動、セッションログ作成、更新確認、初期設定ファイル生成は行いません。
 明示的な初期化なので `prompt_password` / `prompt_secret` が `false` でも入力できます。
 
-選択された参照は名前付き credential で、`cache.backend: session-keyring` が必要です。
-`password` / `secret` の直接指定、legacy 環境変数、`-p` / `-s` の上書き値は保存しません。
-Linux Session Keyring が必要で、`prompt` provider は terminal stdin を必要とします。
+選択された参照のうち、`cache.backend: session-keyring` を設定した名前付き credential
+だけを初期化します。cache 未設定の credential、`password` / `secret` の直接指定、
+legacy 環境変数、`-p` / `-s` の上書き値は入力・取得・保存せずスキップします。
+対象が1件もない場合は案内メッセージを表示し、終了コード `0` で正常終了します。
+対象がある場合は Linux Session Keyring が必要で、`prompt` provider は terminal stdin を
+必要とします。設定の不備や対象 credential の取得・保存失敗は引き続きエラーです。
 他の provider を選んだ場合は、その既存の依存関係・接続条件が適用されます。
 秘密情報は現在のユーザーの Session Keyring に保存し、平文のディスク cache は作りません。
 

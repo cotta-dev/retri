@@ -70,6 +70,14 @@ func TestCredentialCacheInitWithoutSSHOrLogs(t *testing.T) {
 		if err != nil || len(got) != 1 || got[0].Password != "test-login" || got[0].Secret != "test-sudo" {
 			t.Fatal("initialized cache not reusable", err)
 		}
+		// With the env sources now unavailable, the cached login must still be
+		// reusable while the uncached sudo source is skipped without acquisition.
+		spec := cfg.Credentials["sudo"]
+		spec.Cache = config.CredentialCacheConfig{}
+		cfg.Credentials["sudo"] = spec
+		if count, err := initializeCredentialCache(cfg, Options{ConfigFile: path}, nil); err != nil || count != 1 {
+			t.Fatal("mixed cached/uncached initialization failed", err)
+		}
 		return
 	}
 	home := t.TempDir()
