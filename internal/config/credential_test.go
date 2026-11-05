@@ -1,6 +1,37 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
+
+func TestCredentialPromptPolicyLayers(t *testing.T) {
+	var cfg Config
+	if err := yaml.Unmarshal([]byte("defaults:\n  prompt_password: false\n  prompt_secret: false\n"), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	rh := ResolvedHost{}
+	check := func(wantPassword, wantSecret bool) {
+		t.Helper()
+		p, s := ResolveCredentialPrompts(rh, cfg.Defaults)
+		if p != wantPassword || s != wantSecret {
+			t.Fatalf("prompt policy = %v, %v", p, s)
+		}
+	}
+	check(false, false)
+	on, off := true, false
+	rh.GroupConfigs = []GroupConfig{{CommonFields: CommonFields{PromptPassword: &on}}, {CommonFields: CommonFields{PromptPassword: &off, PromptSecret: &on}}}
+	check(false, true)
+	rh.DeviceConfig.CommonFields = CommonFields{PromptPassword: &on, PromptSecret: &off}
+	check(true, false)
+	rh.HostConfig.CommonFields = CommonFields{PromptPassword: &off, PromptSecret: &on}
+	check(false, true)
+	p, s := ResolveCredentialPrompts(ResolvedHost{}, GlobalOptions{})
+	if !p || !s {
+		t.Fatal("omitted settings must allow prompts")
+	}
+}
 
 func TestCredentialLayerMatrix(t *testing.T) {
 	t.Setenv("RETRI_SSH_PASSWORD", "env")

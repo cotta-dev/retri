@@ -43,6 +43,8 @@ defaults:
   # password_credential: "network-login"     # named credential alternative
   # secret: "${SUDO_PASSWORD}"
   # secret_credential: "linux-sudo"
+  # prompt_password: true                   # false: never ask for SSH credentials
+  # prompt_secret: true                     # false: never ask for sudo/enable credentials
   # parallel: auto
   # command: "df -h"
   # commands: ["df -h", "uptime"]

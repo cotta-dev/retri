@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cotta-dev/retri/internal/config"
 )
@@ -35,6 +36,35 @@ func TestResolvePromptOncePerNamedCredential(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("prompt calls = %d, want 1", calls)
+	}
+}
+
+func TestPromptPolicyAcceptsCacheAndRejectsMissWithoutInput(t *testing.T) {
+	spec := config.CredentialSpec{Provider: "prompt", Cache: config.CredentialCacheConfig{Backend: "session-keyring"}}
+	keys := &memoryKeys{data: make(map[string][]byte)}
+	r := NewResolver(map[string]config.CredentialSpec{"shared": spec})
+	r.cache = &keyringCache{keys: keys, now: time.Now}
+	r.namespace = "config"
+	calls := 0
+	r.prompt = func(string) (string, error) { calls++; return "test-value", nil }
+	if _, err := r.ResolveWithPrompt("shared", false); err == nil || calls != 0 {
+		t.Fatal("disabled prompt must fail without reading input")
+	}
+	if _, err := r.Resolve("shared"); err != nil || calls != 1 {
+		t.Fatal("policy failure must not poison an allowed prompt", err)
+	}
+	r.refresh = true
+	if got, err := r.ResolveWithPrompt("shared", false); err != nil || got != "test-value" || calls != 1 {
+		t.Fatal("prompt policies must share the acquired snapshot, including refresh", err)
+	}
+	r.Close()
+	r = NewResolver(map[string]config.CredentialSpec{"shared": spec})
+	defer r.Close()
+	r.cache = &keyringCache{keys: keys, now: time.Now}
+	r.namespace = "config"
+	r.prompt = func(string) (string, error) { t.Fatal("unexpected prompt"); return "", nil }
+	if got, err := r.ResolveWithPrompt("shared", false); err != nil || got != "test-value" {
+		t.Fatal("disabled prompt must accept valid cache", err)
 	}
 }
 

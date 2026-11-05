@@ -175,7 +175,72 @@ defaults to 8 hours. No persistent on-disk cache is created.
 If an explicitly configured provider fails and no valid cache entry exists,
 Retri returns an error instead of silently changing to another provider.
 Credentials that are not configured at all retain Retri's existing hidden
-fallback prompt behavior.
+fallback prompt behavior (which can be disabled as described below).
+
+## Disabling password prompts and preparing the cache
+
+Set `prompt_password: false` to suppress SSH credential input and
+`prompt_secret: false` to suppress sudo/enable secret input. Both default to
+`true` and can be set in `defaults`, `groups`, `device_types`, or `hosts` using
+the normal precedence. An explicit `true` at a higher layer enables input again.
+
+```yaml
+credentials:
+  login:
+    provider: prompt
+    prompt: "SSH password"
+    cache: {backend: session-keyring, ttl: 8h}
+  sudo:
+    provider: prompt
+    prompt: "Sudo password"
+    cache: {backend: session-keyring, ttl: 8h}
+
+defaults:
+  password_credential: login
+  secret_credential: sudo
+  prompt_password: false
+  prompt_secret: false
+```
+
+Unset credentials are skipped without input. A named `prompt` provider still
+accepts a valid cached value, but fails without input on a cache miss. Explicit
+values, environment variables, and other providers continue to work. These
+settings control Retri's automated credential acquisition; they do not control
+SSH/sudo interaction inside `retri <hostname>` or local recording sessions.
+
+Prepare the credentials in the same Linux session before normal execution:
+
+```bash
+retri -c config.yaml --credential-cache-init
+retri -c config.yaml --credential-cache-init -H myserver
+retri -c config.yaml --credential-cache-init -g web
+retri -c config.yaml -i  # short form of --credential-cache-init
+```
+
+`-i` / `--credential-cache-init` prepares the selected SSH/sudo credential caches and
+exits. Without a target, it selects only references in `defaults`. Use `-H`,
+`-g`, or one positional hostname to select host-specific configuration. Commands
+are not required, and configured commands are not executed. This mode makes no
+SSH connection, starts no shell, creates no session logs or initial config files,
+and skips update checks. It explicitly permits credential input even when
+`prompt_password` / `prompt_secret` is `false`.
+
+Only selected named credentials with `cache.backend: session-keyring` are
+initialized. Uncached credentials, direct `password` / `secret`, legacy environment
+fallbacks, and `-p` / `-s` overrides are skipped without input, acquisition or storage.
+If none qualify, Retri prints an informational message and exits successfully
+with code `0`. Configuration errors and failures to acquire or store selected
+cached credentials remain errors. Linux Session Keyring is required when there
+are eligible credentials; a `prompt` provider also requires terminal stdin.
+Other providers retain their existing
+dependencies and connection requirements. Secrets are stored in the current
+user's session keyring without a plaintext disk cache.
+
+Valid cache entries are reused without extending their TTL. Add
+`--credential-cache-refresh` to reacquire values, or use
+`--credential-cache-clear` separately to remove them. If acquiring one credential
+fails, earlier successfully cached values remain. Combining initialization with
+`--command`, `-f`, `--update`, or `--credential-cache-clear` is an error.
 
 ## Security boundaries
 

@@ -5,6 +5,8 @@ Usage:
   retri                  Start local work session recording
   retri <hostname>       SSH to host and record the session
   retri [OPTIONS]        Execute commands and collect logs
+  retri --credential-cache-init [-H host | -g group]
+                        Initialize named SSH/sudo caches only (default: defaults section)
 
   Note: <hostname> is ignored when -H, -g, --command, or -f is specified.
 
@@ -27,6 +29,12 @@ Application Options:
   -p, --password=         SSH Password (default: $RETRI_SSH_PASSWORD or config)
   -s, --secret=           Sudo Secret (default: $RETRI_SSH_SECRET or config)
   -e, --exit-command=     Exit command for interactive sessions (default: exit)
+  -i, --credential-cache-init
+                          Initialize selected SSH/sudo credential caches and exit; no session logs or SSH (Linux Session Keyring required)
+      --credential-cache-refresh
+                          Discard selected credential caches and obtain fresh values from their configured sources
+      --credential-cache-clear
+                          Clear this config's current credential cache entries and exit
       --completion=[bash|zsh|fish]
                           Generate shell completion script (bash, zsh, or fish)
   -C, --config-help       Show config file documentation
@@ -36,3 +44,6 @@ Application Options:
 Help Options:
   -h, --help              Show this help message
 ```
+
+For initialization examples, required cache configuration, prompt controls and
+side effects, see [Credential providers](credentials.md#disabling-password-prompts-and-preparing-the-cache).
