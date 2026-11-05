@@ -151,6 +151,33 @@ credentials:
 
 ## Linux keyring cache
 
+### Cache backend comparison
+
+**Use `user-keyring` for ordinary use when sharing within the same UID is acceptable, with or without tmux.**
+Choose `session-keyring` to tie reuse to an inherited session, or `none` (the
+default when omitted) when credentials should not be cached between invocations.
+
+| Comparison | `user-keyring` | `session-keyring` | `none` / omitted |
+| --- | --- | --- | --- |
+| Intended use | Ordinary CLI use, tmux, reuse across logins | Reuse tied to an inherited session | Acquire on each invocation |
+| Retri reuse scope | Processes and logins with the same UID | Processes inheriting the same session keyring | One Retri invocation only |
+| tmux panes and reattachment | Reusable within the same UID | Reusable while the same inherited keyring remains valid | Acquire on each invocation |
+| Parent session keyring revoked | Unaffected | Cache becomes unavailable | Unaffected |
+| After logout | May remain until TTL while UID processes or other references exist | Depends on PAM revocation and keyring lifetime | No cache between invocations |
+| TTL | Default 8h, allowed 1s–24h | Default 8h, allowed 1s–24h | Cannot be configured |
+| Plaintext disk cache | None | None | None |
+
+Reads do not extend TTL for either keyring backend. Retri grants read permission
+to the owning UID with both backends: selecting `session-keyring` does not
+guarantee strict isolation from other processes with that UID or immediate
+erasure of every copy on logout. It remains available for deployments that want
+to retain the existing session-based behavior.
+
+Storage specifications: [User Keyring](https://man7.org/linux/man-pages/man7/user-keyring.7.html),
+[Session Keyring](https://man7.org/linux/man-pages/man7/session-keyring.7.html).
+
+### Cache configuration
+
 Caching is independent of the provider:
 
 ```yaml
@@ -178,7 +205,7 @@ Retri returns an error instead of silently changing to another provider.
 Credentials that are not configured at all retain Retri's existing hidden
 fallback prompt behavior (which can be disabled as described below).
 
-### Sharing across tmux panes with `user-keyring`
+### Sharing within a UID with `user-keyring`
 
 Explicitly select `user-keyring` to reuse credentials across tmux panes and
 login sessions. It addresses the UID's user keyring directly, so a revoked
