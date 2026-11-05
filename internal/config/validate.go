@@ -115,7 +115,7 @@ func validateCredentials(credentials map[string]CredentialSpec) error {
 			if spec.Cache.TTL != "" {
 				return fmt.Errorf("credential %q: cache ttl requires a cache backend", name)
 			}
-		case "session-keyring":
+		case CacheBackendSessionKeyring, CacheBackendUserKeyring:
 			if provider == "bitwarden" && spec.Server == "" {
 				return fmt.Errorf("credential %q: Bitwarden cache requires server and account (bw status userId)", name)
 			}

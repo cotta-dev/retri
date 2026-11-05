@@ -28,7 +28,7 @@ type Resolver struct {
 	promptMu  sync.Mutex
 	prompt    promptFunc
 	run       commandFunc
-	cache     sessionCache
+	cache     credentialCache
 	namespace string
 	refresh   bool
 }
@@ -38,7 +38,7 @@ func NewResolver(specs map[string]config.CredentialSpec) *Resolver {
 	for name, spec := range specs {
 		copySpecs[name] = spec
 	}
-	return &Resolver{specs: copySpecs, values: make(map[string]*result), prompt: readHiddenPrompt, run: runCommand, cache: newSessionCache()}
+	return &Resolver{specs: copySpecs, values: make(map[string]*result), prompt: readHiddenPrompt, run: runCommand, cache: newCredentialCache()}
 }
 
 // Configure must precede Resolve. Namespace is the canonical config path.
@@ -83,7 +83,7 @@ func (r *Resolver) resolve(name string, allowPrompt bool) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("credential %q is not defined", name)
 	}
-	cached := strings.EqualFold(strings.TrimSpace(spec.Cache.Backend), "session-keyring")
+	cached := config.IsKeyringCacheBackend(spec.Cache.Backend)
 	if cached {
 		if r.namespace == "" {
 			return "", fmt.Errorf("credential %q: cache requires a config namespace", name)
@@ -126,7 +126,7 @@ func (r *Resolver) Clear() error {
 		return fmt.Errorf("cache requires a config namespace")
 	}
 	for name, spec := range r.specs {
-		if strings.EqualFold(strings.TrimSpace(spec.Cache.Backend), "session-keyring") {
+		if config.IsKeyringCacheBackend(spec.Cache.Backend) {
 			if err := r.cache.Delete(r.namespace, name, spec); err != nil {
 				return fmt.Errorf("credential %q: clear cache: %w", name, err)
 			}

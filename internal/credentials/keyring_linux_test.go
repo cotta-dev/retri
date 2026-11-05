@@ -13,8 +13,60 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cotta-dev/retri/internal/config"
 	"golang.org/x/sys/unix"
 )
+
+func TestRevokedSessionKeyringFailsBeforePrompt(t *testing.T) {
+	if os.Getenv("RETRI_REVOKED_KEYRING_TEST") != "1" {
+		exe, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(exe, "-test.run=^TestRevokedSessionKeyringFailsBeforePrompt$", "-test.v")
+		cmd.Env = append(os.Environ(), "RETRI_REVOKED_KEYRING_TEST=1")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("revoked keyring subprocess: %v\n%s", err, out)
+		}
+		t.Log(string(out))
+		return
+	}
+	// Only revoke an anonymous ring created in this isolated subprocess.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	ring, err := unix.KeyctlInt(unix.KEYCTL_JOIN_SESSION_KEYRING, 0, 0, 0, 0)
+	if err != nil {
+		if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) || errors.Is(err, unix.ENOSYS) {
+			t.Skipf("kernel keyring unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	if err := revokeKey(ring); err != nil {
+		t.Fatal(err)
+	}
+	check := func(err error) {
+		t.Helper()
+		if !errors.Is(err, unix.EKEYREVOKED) || !strings.Contains(err.Error(), "keyctl session - bash") {
+			t.Fatalf("expected actionable revoked-session error, got %v", err)
+		}
+	}
+	keys := linuxKeys{}
+	_, _, err = keys.Read("test-only")
+	check(err)
+	check(keys.Write("test-only", []byte("test-only-value"), time.Second))
+	check(keys.Delete("test-only"))
+	_, _, err = readSourceKey("test-only")
+	check(err)
+	for _, refresh := range []bool{false, true} {
+		r := NewResolver(map[string]config.CredentialSpec{"test": {Provider: "prompt", Cache: config.CredentialCacheConfig{Backend: "session-keyring"}}})
+		r.Configure("test-config", refresh, nil)
+		r.prompt = func(string) (string, error) { t.Fatal("revoked session must fail before prompting"); return "", nil }
+		_, err := r.Resolve("test")
+		r.Close()
+		check(err)
+	}
+}
 
 func TestCachePublishesOnlyAfterPermissionAndTimeout(t *testing.T) {
 	for _, failed := range []string{"", "create", "perm", "timeout", "update"} {

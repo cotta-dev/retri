@@ -20,7 +20,7 @@ func TestCredentialCacheInitNames(t *testing.T) {
 	cfg := config.Config{
 		Credentials: map[string]config.CredentialSpec{
 			"login":  {Provider: "prompt", Cache: cache},
-			"sudo":   {Provider: "prompt", Cache: cache},
+			"sudo":   {Provider: "prompt", Cache: config.CredentialCacheConfig{Backend: "user-keyring"}},
 			"shared": {Provider: "prompt", Cache: cache},
 			"unused": {Provider: "prompt"},
 		},

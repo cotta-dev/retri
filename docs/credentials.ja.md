@@ -146,7 +146,33 @@ credentials:
     value: test-password
 ```
 
-## Session Keyring cache
+## Linux keyring cache
+
+### Cache backend の比較
+
+**同じ UID で共有してよい通常の利用は `user-keyring` が基本です。tmux を使わない場合も選べます。**
+再利用を継承セッションに結び付けたい場合は `session-keyring`、実行をまたぐ cache が不要なら
+`none`（未指定時の既定値）を選びます。
+
+| 比較項目 | `user-keyring` | `session-keyring` | `none` / 未指定 |
+| --- | --- | --- | --- |
+| 向いている用途 | 通常の CLI 利用、tmux、別ログインからの再利用 | 継承セッションに結び付けた再利用 | 実行ごとに取得したい場合 |
+| Retri が再利用する範囲 | 同じ UID のプロセス・ログイン間 | 同じ Session Keyring を継承したプロセス間 | 1回の Retri 実行内だけ |
+| tmux の別ペイン・再接続 | 同じ UID なら再利用可能 | 同じ keyring を継承し、有効な間は再利用可能 | 実行ごとに取得 |
+| 親 Session Keyring の失効 | 影響を受けない | cache を利用できなくなる | 影響を受けない |
+| ログアウト後 | UID のプロセス等が残っていれば TTL まで残る場合がある | PAM 等による失効・keyring の寿命に依存 | 実行をまたぐ cache はない |
+| TTL | 既定8h、1s〜24h | 既定8h、1s〜24h | 設定不可 |
+| 平文のディスク cache | 作らない | 作らない | 作らない |
+
+両 keyring backend とも読み出しで TTL は延長しません。現在の Retri は両方で所有 UID に
+読み取り権限を与えるため、`session-keyring` を選んでも、同じ UID の別プロセスからの
+厳密な隔離やログアウト直後の確実な全消去を保証するものではありません。
+`session-keyring` は既存のセッションに結び付いた動作を維持したい運用のために残しています。
+
+保存先の仕様: [User Keyring](https://man7.org/linux/man-pages/man7/user-keyring.7.html)、
+[Session Keyring](https://man7.org/linux/man-pages/man7/session-keyring.7.html)。
+
+### Cache の設定
 
 Cache は provider とは独立しています。
 
@@ -166,12 +192,40 @@ Retri は provider にアクセスする前に cache を確認します。その
 Bitwarden から取得済みであれば、ネットワーク断や Bitwarden 停止中でも
 key が残っていて TTL 内であれば利用できます。
 
-`session-keyring` は Linux のみ対応し、kernel APIを直接利用します。`ttl` 省略時は8時間です。
+`session-keyring` と `user-keyring` は Linux のみ対応し、kernel APIを直接利用します。
+`ttl` 省略時は8時間です。
 ディスク上への永続 cache は作成しません。
 
 明示的に指定した provider が失敗し、有効な cache も存在しない場合、Retri は別の
 provider へ勝手に切り替えずエラーを返します。一方、credential 自体が未設定の場合は、
 従来どおり非表示の fallback prompt を利用します（以下の設定で抑止できます）。
+
+### ユーザー単位で共有する `user-keyring`
+
+同じ UID の別ログインや tmux の別ペイン・再接続後でも再利用する場合は、
+明示的に `user-keyring` を選択できます。
+ログイン時の Session Keyring が失効していても、UID に対応する User Keyring を直接
+利用するため、shell を作り直す必要はありません。
+
+```yaml
+credentials:
+  default-sudo:
+    provider: prompt
+    prompt: "Default sudo password"
+    cache:
+      backend: user-keyring
+      ttl: 8h
+
+defaults:
+  secret_credential: default-sudo
+```
+
+同じ UID の別ログインや他のプロセスからも共有でき、ログアウト後も TTL まで残る場合が
+あります。通常の `session-keyring` より共有範囲が広いため、自動切り替えはしません。
+所有者限定の権限、TTL（1s〜24h）、平文のディスク cache を作らない条件は共通です。
+読み出しで TTL は延長しません。backend ごとに cache の識別子を分離しており、切り替えた
+場合は新しい保存先で取得し直します。元の cache は元の TTL で失効します。
+`--credential-cache-init`、refresh、clear は両 backend に対応します。
 
 ## パスワード入力の抑止と cache の事前作成
 
@@ -218,14 +272,14 @@ retri -c config.yaml -i  # --credential-cache-init の短縮形
 SSH 接続、shell 起動、セッションログ作成、更新確認、初期設定ファイル生成は行いません。
 明示的な初期化なので `prompt_password` / `prompt_secret` が `false` でも入力できます。
 
-選択された参照のうち、`cache.backend: session-keyring` を設定した名前付き credential
-だけを初期化します。cache 未設定の credential、`password` / `secret` の直接指定、
+選択された参照のうち、`cache.backend: session-keyring` または `user-keyring` を設定した
+名前付き credential だけを初期化します。cache 未設定の credential、`password` / `secret` の直接指定、
 legacy 環境変数、`-p` / `-s` の上書き値は入力・取得・保存せずスキップします。
 対象が1件もない場合は案内メッセージを表示し、終了コード `0` で正常終了します。
-対象がある場合は Linux Session Keyring が必要で、`prompt` provider は terminal stdin を
+対象がある場合は Linux keyring が必要で、`prompt` provider は terminal stdin を
 必要とします。設定の不備や対象 credential の取得・保存失敗は引き続きエラーです。
 他の provider を選んだ場合は、その既存の依存関係・接続条件が適用されます。
-秘密情報は現在のユーザーの Session Keyring に保存し、平文のディスク cache は作りません。
+秘密情報は選択した Linux keyring に保存し、平文のディスク cache は作りません。
 
 有効な cache は再利用し、期限を延長しません。取り直す場合は
 `--credential-cache-init --credential-cache-refresh`、破棄する場合は
@@ -290,6 +344,27 @@ value keyにも公開前に権限、公開後にtimeoutを設定します（user
 します。平文disk cacheは作りません。Go string/runtime copy、swap、crash dump、
 特権によるメモリ参照は防御範囲外です。一時byte bufferは可能な範囲で消去しますが、
 完全なメモリ消去は保証しません。
+
+### Session Keyring が失効している場合
+
+親の Session Keyring 自体が失効している場合、Retri は cache 未作成として扱わず、
+パスワード入力前にエラーと復旧方法を表示します。ログアウト時の PAM の処理などで
+keyring が失効し、長時間動く shell や tmux 等が古い keyring を継承している場合があります。
+
+新しいログインセッションを使用するか、`keyctl` がある場合は手元の端末で新しい shell
+を起動してください。既存の keyring を削除・失効させる操作は不要です。
+
+```bash
+keyctl session - bash
+keyctl id @s
+retri -c config.yaml -i -H myserver
+```
+
+`keyctl id @s` が失敗した場合はそこで止めてください。成功後は、cache の作成と後続の
+Retri 実行をすべてこの新しい shell 内で行います。終了は `exit` で元の shell に戻ります。
+Retri が自身のプロセスだけで keyring を作り直しても、親 shell からの後続実行とは共有
+できないため、自動的な置き換えは行いません。`keyctl` はこの復旧手順用であり、通常の
+Retri 実行の依存関係ではありません。
 
 v2 cacheはこの未マージPRの旧実装が書いたentryを利用しません。旧実装を実行済みなら
 keyutilsで旧`retri:credential:` keyを確認・削除してください。旧timeout設定失敗に

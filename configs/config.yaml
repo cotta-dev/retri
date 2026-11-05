@@ -13,6 +13,7 @@
 #     prompt: "Linux sudo password"
 #     cache:
 #       backend: session-keyring
+#       # backend: user-keyring       # opt in to same-UID sharing across tmux/login sessions
 #       ttl: 8h
 #
 #   from-env:

@@ -65,7 +65,7 @@ func credentialCacheInitNames(cfg config.Config, opts Options, remaining []strin
 			if !ok {
 				return nil, fmt.Errorf("credential %q is not defined", source.Credential)
 			}
-			if !strings.EqualFold(strings.TrimSpace(spec.Cache.Backend), "session-keyring") {
+			if !config.IsKeyringCacheBackend(spec.Cache.Backend) {
 				continue
 			}
 			names[source.Credential] = true

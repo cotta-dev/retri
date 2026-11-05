@@ -50,7 +50,7 @@ type Options struct {
 	ExitCommand            string `short:"e" long:"exit-command" description:"Exit command for interactive sessions (default: exit)"`
 	CredentialCacheRefresh bool   `long:"credential-cache-refresh" description:"Discard selected credential caches and obtain fresh values from their configured sources"`
 	CredentialCacheClear   bool   `long:"credential-cache-clear" description:"Clear this config's current credential cache entries and exit"`
-	CredentialCacheInit    bool   `short:"i" long:"credential-cache-init" description:"Initialize selected SSH/sudo credential caches and exit; no session logs or SSH (Linux Session Keyring required)"`
+	CredentialCacheInit    bool   `short:"i" long:"credential-cache-init" description:"Initialize selected SSH/sudo credential caches and exit; no session logs or SSH (Linux keyring required)"`
 
 	// Misc
 	Completion string `long:"completion" choice:"bash" choice:"zsh" choice:"fish" description:"Generate shell completion script (bash, zsh, or fish)"`
@@ -80,8 +80,8 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 		"  retri --credential-cache-init [-H host | -g group]\n" +
 		"                        Cache named credentials only (default: defaults section)\n" +
 		"                        Example: retri -c config.yaml --credential-cache-init\n" +
-		"                        Requires cache.backend: session-keyring; stores secrets\n" +
-		"                        in the current user's Linux session keyring (default TTL: 8h).\n" +
+		"                        Requires cache.backend: session-keyring or user-keyring;\n" +
+		"                        stores secrets in a Linux keyring (default TTL: 8h).\n" +
 		"                        Other sources are skipped; no matches prints a message and exits.\n\n" +
 		"  Note: <hostname> is ignored when -H, -g, --command, or -f is specified."
 
@@ -164,7 +164,7 @@ func Run(version string, defaultConfigContent []byte, helpContent string) {
 			log.Fatalf("[ERROR] Failed to initialize credential cache: %v", err)
 		}
 		if count == 0 {
-			fmt.Println("[INFO] No credentials with cache.backend: session-keyring selected; nothing to initialize.")
+			fmt.Println("[INFO] No credentials with a keyring cache selected; nothing to initialize.")
 		} else {
 			fmt.Printf("Credential cache initialized for %d credential(s); no SSH connection or session log created.\n", count)
 		}
