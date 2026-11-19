@@ -1,0 +1,62 @@
+name: Delete merged branches
+
+on:
+  pull_request_target:
+    types: [closed]
+  workflow_run:
+    workflows: [CI, CodeQL, Merge Dependabot updates]
+    types: [completed]
+  workflow_dispatch:
+  schedule:
+    - cron: '43 3 * * *'
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: delete-merged-branches
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.repository == 'cotta-dev/retri'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Only use API metadata. Never check out or execute pull request code.
+      - name: Delete unchanged merged PR branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          default_branch=$(gh api "repos/$GH_REPO" --jq '.default_branch')
+          branches=$(gh api --paginate --slurp "repos/$GH_REPO/branches?per_page=100" --jq 'add')
+          open_prs=$(gh api --paginate --slurp "repos/$GH_REPO/pulls?state=open&per_page=100" --jq 'add')
+          merged=$(gh api --paginate --slurp "repos/$GH_REPO/pulls?state=closed&per_page=100" --jq 'add')
+          candidates=$(jq -c --arg repo "$GH_REPO" --arg default "$default_branch" \
+            --argjson branches "$branches" --argjson open "$open_prs" '
+            [.[] |
+              select(.merged_at != null and .base.ref == "main" and .head.repo.full_name == $repo) |
+              . as $pr |
+              select(.head.ref != $default and .head.ref != .base.ref) |
+              select(any($branches[]; .name == $pr.head.ref and .protected == false and .commit.sha == $pr.head.sha)) |
+              select(all($open[]; .head.repo.full_name != $repo or .head.ref != $pr.head.ref)) |
+              {branch: .head.ref, sha: .head.sha}
+            ] | unique_by(.branch) | .[]
+          ' <<< "$merged")
+          while IFS= read -r candidate; do
+            [[ -n "$candidate" ]] || continue
+            branch=$(jq -r '.branch' <<< "$candidate")
+            sha=$(jq -r '.sha' <<< "$candidate")
+            encoded=$(jq -rn --arg branch "$branch" '$branch | @uri')
+            # Recheck immediately before deletion in case the branch advanced.
+            current=$(gh api "repos/$GH_REPO/branches/$encoded")
+            if ! jq -e --arg sha "$sha" '.protected == false and .commit.sha == $sha' <<< "$current" >/dev/null; then
+              continue
+            fi
+            gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$encoded"
+            printf 'Deleted merged branch: %s\n' "$branch" >> "$GITHUB_STEP_SUMMARY"
+          done <<< "$candidates"
