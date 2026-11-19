@@ -5,23 +5,87 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v1.2.3). Leave empty for a development build.'
+        required: false
+        type: string
+        default: ''
 
 permissions:
-  contents: write
-  actions: read
+  contents: read
 
 jobs:
-  # 1. Production release (triggered by tag push)
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.version != '')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    concurrency:
+      group: retri-production-release
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Validate release target
+        id: target
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+              echo "::error::Select main when creating a production release."
+              exit 1
+            fi
+            tag="$INPUT_VERSION"
+            if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo "::error::Version must be vMAJOR.MINOR.PATCH (for example v1.2.3)."
+              exit 1
+            fi
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          git check-ref-format "refs/tags/$tag"
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            if [[ "$(git rev-parse "refs/tags/$tag^{commit}")" != "$(git rev-parse HEAD)" ]]; then
+              echo "::error::This tag already points to another commit."
+              exit 1
+            fi
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::error::This release already exists. Choose a new version."
+            exit 1
+          fi
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test -race ./...
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+      - name: Prepare local release tag
+        env:
+          RELEASE_TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            git tag "$RELEASE_TAG" HEAD
+          fi
 
       - name: Build with GoReleaser
         uses: goreleaser/goreleaser-action@v7
@@ -31,18 +95,28 @@ jobs:
           args: release --clean --skip=publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.target.outputs.tag }}
 
-      - name: Publish release (deb only)
-        run: |
-          gh release create "${{ github.ref_name }}" dist/*.deb \
-            --title "${{ github.ref_name }}" \
-            --generate-notes
+      # The built-in token does not trigger a second push workflow.
+      # Publish here, after building the exact commit selected at dispatch time.
+      - name: Push tag and publish release (deb only)
         env:
+          RELEASE_TAG: ${{ steps.target.outputs.tag }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -s "dist/retri_${RELEASE_TAG#v}_amd64.deb"
+          test -s "dist/retri_${RELEASE_TAG#v}_arm64.deb"
+          git push origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          url=$(gh release create "$RELEASE_TAG" dist/*.deb \
+            --verify-tag --title "$RELEASE_TAG" --generate-notes)
+          printf 'Released [%s](%s) from commit %s\n' "$RELEASE_TAG" "$url" "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
   # 2. Development build (manual trigger)
   manual-build:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.version == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -80,3 +154,4 @@ jobs:
           name: ${{ steps.artifact-name.outputs.base }}_arm64
           path: dist/*_arm64.deb
           retention-days: 3
+
