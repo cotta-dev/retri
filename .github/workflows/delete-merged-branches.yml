@@ -33,9 +33,9 @@ jobs:
         run: |
           set -euo pipefail
           default_branch=$(gh api "repos/$GH_REPO" --jq '.default_branch')
-          branches=$(gh api --paginate --slurp "repos/$GH_REPO/branches?per_page=100" --jq 'add')
-          open_prs=$(gh api --paginate --slurp "repos/$GH_REPO/pulls?state=open&per_page=100" --jq 'add')
-          merged=$(gh api --paginate --slurp "repos/$GH_REPO/pulls?state=closed&per_page=100" --jq 'add')
+          branches=$(gh api --paginate --slurp "repos/$GH_REPO/branches?per_page=100" | jq 'add // []')
+          open_prs=$(gh api --paginate --slurp "repos/$GH_REPO/pulls?state=open&per_page=100" | jq 'add // []')
+          merged=$(gh api --paginate --slurp "repos/$GH_REPO/pulls?state=closed&per_page=100" | jq 'add // []')
           candidates=$(jq -c --arg repo "$GH_REPO" --arg default "$default_branch" \
             --argjson branches "$branches" --argjson open "$open_prs" '
             [.[] |
