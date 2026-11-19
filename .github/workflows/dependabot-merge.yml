@@ -1,0 +1,68 @@
+name: Merge Dependabot updates
+
+on:
+  workflow_run:
+    workflows: [CI, CodeQL]
+    types: [completed]
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+concurrency:
+  group: dependabot-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: github.repository == 'cotta-dev/retri'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Never check out PR code or consume artifacts with this write token.
+      # No version filter: patch, minor, and major updates are all eligible.
+      - name: Merge verified Dependabot PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidates=$(gh api --paginate "repos/$GH_REPO/pulls?state=open&base=main&per_page=100" \
+            --jq '.[] | select(.user.login == "dependabot[bot]" and .user.id == 49699333 and .draft == false) | .number')
+          for number in $candidates; do
+            pr=$(gh api "repos/$GH_REPO/pulls/$number")
+            if ! jq -e --arg repo "$GH_REPO" '
+              .state == "open" and .draft == false and
+              .user.login == "dependabot[bot]" and .user.id == 49699333 and
+              .base.ref == "main" and .base.repo.full_name == $repo and
+              .head.repo.full_name == $repo and
+              (.head.ref | startswith("dependabot/")) and
+              .mergeable == true and .mergeable_state == "clean"
+            ' <<< "$pr" >/dev/null; then
+              echo "PR #$number: waiting for checks, rebase, or conflict resolution."
+              continue
+            fi
+            sha=$(jq -r '.head.sha' <<< "$pr")
+            # Fail closed for missing, skipped, pending, or failed checks.
+            if ! checks=$(gh pr checks "$number" --json name,state); then
+              echo "PR #$number: checks are not successful yet."
+              continue
+            fi
+            if ! jq -e '
+              length > 0 and all(.[]; .state == "SUCCESS") and
+              (map(.name) as $names |
+                all(["test", "analyze", "CodeQL"][]; . as $name | $names | index($name) != null))
+            ' <<< "$checks" >/dev/null; then
+              echo "PR #$number: required successful checks are missing."
+              continue
+            fi
+            # GitHub rechecks branch rules; the SHA guard rejects a changed PR.
+            # Do not use --admin or bypass the latest-main requirement.
+            gh pr merge "$number" --squash --match-head-commit "$sha"
+            echo "Merged Dependabot PR #$number." >> "$GITHUB_STEP_SUMMARY"
+          done
