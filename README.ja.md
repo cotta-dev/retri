@@ -32,6 +32,16 @@ SSH を使うモードには OpenSSH クライアント（`PATH` 上の `ssh`）
 
 ### Ubuntu/Debian（推奨）
 
+次のコマンドで、使用中のアーキテクチャに合う最新版の `.deb` を取得して
+インストールできます（`curl` が必要です）。
+
+```bash
+curl -fsSL "$(curl -fsSL https://api.github.com/repos/cotta-dev/retri/releases/latest \
+  | grep browser_download_url | grep "$(dpkg --print-architecture).deb" | cut -d'"' -f4)" \
+  -o /tmp/retri.deb && sudo apt-get install -y /tmp/retri.deb
+```
+
+手動でダウンロードする場合は、
 [Releases ページ](https://github.com/cotta-dev/retri/releases/latest) から、
 `dpkg --print-architecture` と一致する `.deb` をダウンロードします。
 以下の `VERSION` とアーキテクチャは、実際のファイル名に置き換えてください。

@@ -32,7 +32,16 @@ SSH recording require a terminal; local recording also requires a shell.
 
 ### Ubuntu/Debian (recommended)
 
-Download the `.deb` matching `dpkg --print-architecture` from the
+Fetch and install the latest `.deb` for your architecture in one command
+(requires `curl`):
+
+```bash
+curl -fsSL "$(curl -fsSL https://api.github.com/repos/cotta-dev/retri/releases/latest \
+  | grep browser_download_url | grep "$(dpkg --print-architecture).deb" | cut -d'"' -f4)" \
+  -o /tmp/retri.deb && sudo apt-get install -y /tmp/retri.deb
+```
+
+Alternatively, download the `.deb` matching `dpkg --print-architecture` from the
 [Releases page](https://github.com/cotta-dev/retri/releases/latest).
 Replace `VERSION` and the architecture below with the downloaded filename:
 
