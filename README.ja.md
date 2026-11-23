@@ -40,7 +40,7 @@ Bash で次を実行すると、アーキテクチャに合う最新版の `.deb
   set -eo pipefail
   url=$(curl -fsS https://api.github.com/repos/cotta-dev/retri/releases/latest |
     grep -o "https://github\.com/cotta-dev/retri/releases/download/[^\"[:space:]]*_$(dpkg --print-architecture)\.deb")
-  deb=$(mktemp /tmp/retri.XXXXXX.deb); trap 'rm -f "$deb"' EXIT
+  deb=$(mktemp /tmp/retri.XXXXXX.deb)
   curl -gfsSLo "$deb" --proto =https "$url"
   chmod 644 "$deb" && sudo apt-get install -y "$deb"
 )
