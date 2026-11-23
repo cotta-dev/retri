@@ -147,8 +147,9 @@ Run `retri --help` for the current options, or see the
 
 ### Shell Completion
 
-The `.deb` package installs completion files for bash, zsh, and fish. They are
-loaded in new shells when the shell's completion system is enabled.
+Installing the `.deb` package automatically places the completion files for
+bash, zsh, and fish. No manual generation or placement is needed. When the
+shell's completion system is enabled, they are loaded in new shells.
 
 For source builds or `go install`, generate and load a completion script manually:
 
