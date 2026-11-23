@@ -37,7 +37,7 @@ Fetch and install the latest `.deb` for your architecture in one command
 
 ```bash
 curl -fsSL "$(curl -fsSL https://api.github.com/repos/cotta-dev/retri/releases/latest \
-  | grep browser_download_url | grep "$(dpkg --print-architecture).deb" | cut -d'"' -f4)" \
+  | grep -o "https://[^\"]*_$(dpkg --print-architecture)\.deb")" \
   -o /tmp/retri.deb && sudo apt-get install -y /tmp/retri.deb
 ```
 
