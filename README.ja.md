@@ -32,19 +32,17 @@ SSH を使うモードには OpenSSH クライアント（`PATH` 上の `ssh`）
 
 ### Ubuntu/Debian（推奨）
 
-Bash で次を実行すると、アーキテクチャに合う最新版の `.deb` を取得して
-インストールできます。`curl` が必要です。一時ファイルは処理の終了時に削除します。
+Bash で次を実行すると、アーキテクチャに合う最新版の `.deb` を
+インストールできます（`curl` が必要です）。
 
 ```bash
 (
-  set -o pipefail
-  url=$(curl -fsSL --proto '=https' https://api.github.com/repos/cotta-dev/retri/releases/latest |
-    grep -o "https://github\.com/cotta-dev/retri/releases/download/[^\"[:space:]]*_$(dpkg --print-architecture)\.deb") || exit 1
-  deb=$(mktemp /tmp/retri.XXXXXX.deb) || exit 1
-  trap 'rm -f -- "$deb"' EXIT
-  curl -gfsSL --proto '=https' "$url" -o "$deb" &&
-    chmod 0644 "$deb" &&
-    sudo apt-get install -y "$deb"
+  set -eo pipefail
+  url=$(curl -fsS https://api.github.com/repos/cotta-dev/retri/releases/latest |
+    grep -o "https://github\.com/cotta-dev/retri/releases/download/[^\"[:space:]]*_$(dpkg --print-architecture)\.deb")
+  deb=$(mktemp /tmp/retri.XXXXXX.deb); trap 'rm -f "$deb"' EXIT
+  curl -gfsSLo "$deb" --proto =https "$url"
+  chmod 644 "$deb" && sudo apt-get install -y "$deb"
 )
 ```
 

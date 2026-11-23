@@ -32,19 +32,16 @@ SSH recording require a terminal; local recording also requires a shell.
 
 ### Ubuntu/Debian (recommended)
 
-Run this Bash block to fetch and install the latest `.deb` for your
-architecture. It requires `curl` and removes the temporary package when done.
+In Bash, use `curl` to install the latest `.deb` for your architecture:
 
 ```bash
 (
-  set -o pipefail
-  url=$(curl -fsSL --proto '=https' https://api.github.com/repos/cotta-dev/retri/releases/latest |
-    grep -o "https://github\.com/cotta-dev/retri/releases/download/[^\"[:space:]]*_$(dpkg --print-architecture)\.deb") || exit 1
-  deb=$(mktemp /tmp/retri.XXXXXX.deb) || exit 1
-  trap 'rm -f -- "$deb"' EXIT
-  curl -gfsSL --proto '=https' "$url" -o "$deb" &&
-    chmod 0644 "$deb" &&
-    sudo apt-get install -y "$deb"
+  set -eo pipefail
+  url=$(curl -fsS https://api.github.com/repos/cotta-dev/retri/releases/latest |
+    grep -o "https://github\.com/cotta-dev/retri/releases/download/[^\"[:space:]]*_$(dpkg --print-architecture)\.deb")
+  deb=$(mktemp /tmp/retri.XXXXXX.deb); trap 'rm -f "$deb"' EXIT
+  curl -gfsSLo "$deb" --proto =https "$url"
+  chmod 644 "$deb" && sudo apt-get install -y "$deb"
 )
 ```
 
