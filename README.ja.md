@@ -32,13 +32,20 @@ SSH を使うモードには OpenSSH クライアント（`PATH` 上の `ssh`）
 
 ### Ubuntu/Debian（推奨）
 
-次のコマンドで、使用中のアーキテクチャに合う最新版の `.deb` を取得して
-インストールできます（`curl` が必要です）。
+Bash で次を実行すると、アーキテクチャに合う最新版の `.deb` を取得して
+インストールできます。`curl` が必要です。一時ファイルは処理の終了時に削除します。
 
 ```bash
-curl -fsSL "$(curl -fsSL https://api.github.com/repos/cotta-dev/retri/releases/latest \
-  | grep -o "https://[^\"]*_$(dpkg --print-architecture)\.deb")" \
-  -o /tmp/retri.deb && sudo apt-get install -y /tmp/retri.deb
+(
+  set -o pipefail
+  url=$(curl -fsSL --proto '=https' https://api.github.com/repos/cotta-dev/retri/releases/latest |
+    grep -o "https://github\.com/cotta-dev/retri/releases/download/[^\"[:space:]]*_$(dpkg --print-architecture)\.deb") || exit 1
+  deb=$(mktemp /tmp/retri.XXXXXX.deb) || exit 1
+  trap 'rm -f -- "$deb"' EXIT
+  curl -gfsSL --proto '=https' "$url" -o "$deb" &&
+    chmod 0644 "$deb" &&
+    sudo apt-get install -y "$deb"
+)
 ```
 
 手動でダウンロードする場合は、
@@ -234,9 +241,9 @@ defaults:
 | `RETRI_SSH_SECRET` | 自動実行で credential が未設定のときに使う sudo / enable シークレット。 |
 | `RETRI_LOG_ENCODING` | `log_encoding` 未指定時に使う出力元文字コード。 |
 
-自動実行では、解決済みの SSH パスワードと sudo / enable シークレットを端末出力から
-マスクします。対話記録では端末によるパスワード入力の非表示に依存し、
-コマンドが表示した任意の秘密情報はログに残る場合があります。
+自動実行では、受信した端末出力を描画する前に、SSH パスワードと sudo / enable
+シークレットに文字列が一致した部分をマスクします。コマンドやその出力に
+秘密情報を含めないでください。保護範囲は [credential の説明](docs/credentials.ja.md#セキュリティ境界)を参照してください。
 
 ## 出力フォーマット
 

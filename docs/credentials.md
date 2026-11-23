@@ -328,6 +328,13 @@ The `bw` child retains its own Bitwarden environment, including `BW_SESSION`.
 Ordinary SSH agent, proxy and locale variables are preserved. This is not an
 allowlist of every possible application secret in the parent environment.
 
+Automated SSH output and its debug terminal stream redact known literal
+credential values across read boundaries before terminal rendering. Terminal
+controls inserted inside a secret or other transformations can prevent literal
+matching. The mask applies only before rendering. Command headers and debug
+`Sending:` messages show the configured commands as written. Keep secrets
+out of commands and their output, including during interactive recording.
+
 ## Resolution and lifecycle
 
 Configuration priority is `defaults < groups < device_types < hosts < CLI`.
@@ -434,11 +441,3 @@ needs neither `bw` nor an unlocked vault or network. Lock/logout does not revoke
 Retri's independent copy: clear it explicitly. Clear does not erase snapshots
 already acquired by a running Retri process. Switching accounts or servers
 requires updating the bound profile, which selects a different cache identity.
-
-Automated SSH output and its debug terminal stream redact known literal
-credential values across read boundaries before terminal rendering. Terminal
-controls inserted inside a secret or other transformations can prevent literal
-matching; the automated execution path does not apply a second redaction pass
-after rendering. Command headers and debug `Sending:` messages contain the
-configured commands without redaction, so do not embed secrets in commands.
-Interactive recording cannot redact credentials Retri has never acquired.

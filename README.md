@@ -32,13 +32,20 @@ SSH recording require a terminal; local recording also requires a shell.
 
 ### Ubuntu/Debian (recommended)
 
-Fetch and install the latest `.deb` for your architecture in one command
-(requires `curl`):
+Run this Bash block to fetch and install the latest `.deb` for your
+architecture. It requires `curl` and removes the temporary package when done.
 
 ```bash
-curl -fsSL "$(curl -fsSL https://api.github.com/repos/cotta-dev/retri/releases/latest \
-  | grep -o "https://[^\"]*_$(dpkg --print-architecture)\.deb")" \
-  -o /tmp/retri.deb && sudo apt-get install -y /tmp/retri.deb
+(
+  set -o pipefail
+  url=$(curl -fsSL --proto '=https' https://api.github.com/repos/cotta-dev/retri/releases/latest |
+    grep -o "https://github\.com/cotta-dev/retri/releases/download/[^\"[:space:]]*_$(dpkg --print-architecture)\.deb") || exit 1
+  deb=$(mktemp /tmp/retri.XXXXXX.deb) || exit 1
+  trap 'rm -f -- "$deb"' EXIT
+  curl -gfsSL --proto '=https' "$url" -o "$deb" &&
+    chmod 0644 "$deb" &&
+    sudo apt-get install -y "$deb"
+)
 ```
 
 Alternatively, download the `.deb` matching `dpkg --print-architecture` from the
@@ -237,9 +244,10 @@ Fallback environment variables (lowest priority):
 | `RETRI_SSH_SECRET` | sudo / enable secret fallback for automated execution when no credential is configured. |
 | `RETRI_LOG_ENCODING` | Source encoding used when `log_encoding` is not configured. |
 
-Automated execution redacts the resolved SSH password and sudo / enable secret
-from terminal output. Interactive recording relies on the terminal hiding
-password input; arbitrary secrets printed by commands can still enter logs.
+Automated execution masks literal matches for the SSH password and sudo /
+enable secret in received terminal output before rendering it. Keep secrets
+out of commands and their output. See the limits in
+[Credential providers](docs/credentials.md#security-boundaries).
 
 ## Output Format
 
