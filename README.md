@@ -14,34 +14,35 @@ It was born from a desire to replicate the **TeraTerm log + macro workflow** in 
 
 ## Key Features
 
-* **Local Session Recording**: Run without any arguments to record your current shell session to a log file — just like TeraTerm's log function.
+* **Local Session Recording**: Run without any arguments to start a new shell and record its terminal output — just like TeraTerm's log function.
 * **SSH Session Recording**: Pass a hostname as an argument to SSH into a remote host and record the entire session automatically.
 * **Automated Command Execution**: Execute commands across multiple hosts and save timestamped logs — equivalent to a TeraTerm macro.
 * **Agentless**: Works with standard SSH. No software required on remote hosts.
-* **Dependency Free**: Single binary (statically linked). Download and run.
-* **Network Device Support**: Handles interactive PTY sessions for Cisco IOS, Arista EOS, Juniper, Huawei, etc. Passwords are never written to logs.
-* **Original Output Bytes Preserved**: Printable terminal output is written without guessing or converting its character encoding. ASCII/ESC terminal controls are rendered separately.
-* **Parallel Execution**: Run commands on multiple servers concurrently.
-* **SSH Config Aware**: Fully supports `~/.ssh/config` (aliases, proxy jumps, identity files).
+* **Single Binary**: Release binaries are statically linked; SSH connections use the system's `ssh` client.
+* **Network Device Support**: Use configurable prompts and setup commands for Cisco IOS, Arista EOS, Juniper, Huawei, and other interactive CLIs.
+* **Output Encoding Control**: Preserve rendered terminal text bytes by default, or convert a known source encoding to UTF-8.
+* **Parallel Execution**: Run commands on multiple servers concurrently (default: 5 hosts).
+* **SSH Config Aware**: Uses `~/.ssh/config` for aliases, ProxyJump, identity files, and other SSH settings.
 
 ## Installation
 
+Release packages target Linux (`amd64` and `arm64`), including WSL.
+SSH modes require an OpenSSH client (`ssh` on `PATH`). Interactive local and
+SSH recording require a terminal; local recording also requires a shell.
+
 ### Ubuntu/Debian (recommended)
 
-```bash
-curl -fsSL $(curl -fsSL https://api.github.com/repos/cotta-dev/retri/releases/latest \
-  | grep browser_download_url | grep "$(dpkg --print-architecture).deb" | cut -d'"' -f4) \
-  -o /tmp/retri.deb && sudo apt-get install -y /tmp/retri.deb
-```
-
-Or download the `.deb` manually from the [Releases page](https://github.com/cotta-dev/retri/releases):
+Download the `.deb` matching `dpkg --print-architecture` from the
+[Releases page](https://github.com/cotta-dev/retri/releases/latest).
+Replace `VERSION` and the architecture below with the downloaded filename:
 
 ```bash
-cp retri_VERSION_amd64.deb /tmp/
-sudo apt-get install -y /tmp/retri_VERSION_amd64.deb
+sudo apt-get install ./retri_VERSION_amd64.deb
 ```
 
 ### Build from Source
+
+Use a Go toolchain that meets the version requirement in [go.mod](go.mod).
 
 ```bash
 git clone https://github.com/cotta-dev/retri.git
@@ -59,28 +60,14 @@ CGO_ENABLED=0 go install github.com/cotta-dev/retri@latest
 
 ### Record a Local Work Session (no arguments)
 
-Running `retri` without any arguments starts recording your current shell session to a log file.
+Running `retri` without any arguments starts a new login shell using `$SHELL`
+(or `/bin/sh` when unset) and records its terminal output. Exit that shell to
+return to the shell that launched Retri.
 
 ```bash
 retri
 # → starts logging to ~/retri-logs/hostname_YYYYMMDD_HHmmss.log
 # → type 'exit' or press Ctrl-D to stop recording
-```
-
-To keep only submitted command lines and their output, enable commands-only
-logging. Login banners, idle prompts, input redraws, and credential prompts are
-omitted; an empty submission is retained as a prompt-only line. The terminal
-display is unchanged.
-
-```bash
-retri --log-commands-only
-```
-
-It can also be enabled by default for local and SSH session recording:
-
-```yaml
-defaults:
-  log_commands_only: true
 ```
 
 ### SSH + Record Session (hostname as argument)
@@ -93,70 +80,91 @@ retri myserver
 # → type 'exit' to disconnect and stop recording
 ```
 
-Commands-only logging works for interactive SSH sessions, including network
-device CLIs:
-
-```bash
-retri --log-commands-only myserver
-```
-
-Retri does not guess the device encoding. It first renders terminal operations
-such as ANSI controls, carriage-return redraws, and cursor edits. The default
-`log_encoding: raw` then writes the surviving source bytes of each rendered
-line without character decoding, replacement, or re-encoding. It is the
-highest-fidelity choice for evidentiary logs, but it is not a byte-for-byte
-capture of the raw PTY stream: terminal controls and overwritten text are
-removed, tabs are expanded, and trailing whitespace and repeated blank lines
-are normalized. To normalize a known device encoding to UTF-8 for readability,
-set it on a device type, group, host, or defaults:
-
-```yaml
-device_types:
-  cisco_ios_jp:
-    log_encoding: shift_jis
-    prompt_regex: "[#>] ?$"
-```
-
-Supported values are `raw`, `utf-8`, `shift_jis` (including CP932 /
-Windows-31J), `euc-jp`, `iso-8859-1`, `windows-1252`, `gb18030`, `gbk`, `big5`,
-and `euc-kr`. `--log-encoding` overrides the configuration. If a rendered line
-is malformed for the configured encoding, Retri warns once and keeps that
-line's rendered source bytes in the same `.log`; it never creates a `.raw`
-sidecar. Such a fallback can make that `.log` contain mixed encodings.
-
-New log files are private (`0600`) and Retri refuses to overwrite an existing
-log path. A generated log filename must be a single local filename; path
-separators and control characters are rejected.
+This mode uses the SSH client's authentication and connection settings.
+Retri applies `defaults` and logging flags to the log; per-host, group, and
+device-type settings and Retri's automated credential handling are not applied.
 
 ### Automate Commands and Collect Logs
 
 Run a command on a single host (using `~/.ssh/config` alias):
+
 ```bash
 retri --host myserver --command "df -h"
 ```
 
 Run commands on a group of servers defined in config:
+
 ```bash
 retri --group web_servers
 ```
 
+Read commands from a file (one command per line; blank lines and lines starting
+with `#` are ignored):
+
+```bash
+retri --host myserver --command-file commands.txt
+```
+
+Command lists from the configuration and CLI are combined in order; `--command`
+and `--command-file` add commands rather than replacing configured commands.
+`--host`, `--group`, `--command`, or `--command-file` selects automated mode;
+a positional hostname is ignored when any of these is supplied. Hosts with no
+commands are skipped.
+
+### Record Only Commands and Their Output
+
+For local or interactive SSH recording, enable commands-only logging:
+
+```bash
+retri --log-commands-only
+retri --log-commands-only myserver
+```
+
+Login banners, idle prompts, input redraws, and credential prompts are omitted;
+an empty submission is retained as a prompt-only line. The terminal display is
+unchanged. This also works with network device CLIs.
+
+To enable it by default for recording sessions:
+
+```yaml
+defaults:
+  log_commands_only: true
+```
+
 ### Command Line Options
 
-See [docs/cli-options.md](docs/cli-options.md) for the full option reference.
+Run `retri --help` for the current options, or see the
+[option reference](docs/cli-options.md).
 
 ### Shell Completion
 
-The `.deb` package installs shell completion automatically for bash, zsh, and fish.
+The `.deb` package installs completion files for bash, zsh, and fish. They are
+loaded in new shells when the shell's completion system is enabled.
 
 For source builds or `go install`, generate and load a completion script manually:
 
 ```bash
 # bash
 source <(retri --completion bash)
+```
 
+For zsh, save the generated function on `fpath` and let
+[`compinit`](https://zsh.sourceforge.io/Doc/Release/Completion-System.html)
+register it:
+
+```zsh
 # zsh
-source <(retri --completion zsh)
+mkdir -p ~/.zsh/completions
+retri --completion zsh > ~/.zsh/completions/_retri
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit
+compinit
+```
 
+Keep the `fpath` line before your existing `compinit` call in `~/.zshrc` to
+enable it in future shells.
+
+```fish
 # fish
 retri --completion fish | source
 ```
@@ -166,11 +174,33 @@ aliases from `~/.ssh/config` / `known_hosts` for `retri <hostname>`.
 
 ## Configuration
 
-On the first run, retri automatically creates a default configuration file at `~/.config/retri/config.yaml`.
+On the first normal run, Retri creates `~/.config/retri/config.yaml` and
+`~/.config/retri/commands/` if missing. Use `--config PATH` to load another
+configuration file. `--help`, `--version`, `--config-help`, and completion
+generation do not create these files.
 
 ### Example `config.yaml`
 
-See [docs/config-reference.yaml](docs/config-reference.yaml) for the complete parameter reference of each section.
+This minimal configuration defines the group used above. Replace `myserver`
+with your SSH hostname or alias:
+
+```yaml
+defaults:
+  log_dir: "~/retri-logs"
+
+groups:
+  - name: web_servers
+    hosts: [myserver]
+    commands:
+      - "df -h"
+      - "uptime"
+```
+
+For automated execution, shared settings are resolved in this order (low to
+high): `defaults` → `groups` → `device_types` → `hosts` → CLI flags.
+Commands are aggregated across those layers. See `retri --config-help` or
+the [complete configuration reference](docs/config-reference.yaml) for
+field-specific rules, device profiles, and host ranges such as `switch-[01-04]`.
 
 ### Environment Variables & Security
 
@@ -180,11 +210,9 @@ Bitwarden and Linux keyrings are not required for ordinary use.
 See the [cache backend comparison](docs/credentials.md#cache-backend-comparison)
 to choose between `user-keyring`, `session-keyring`, and `none`.
 
-Avoid hardcoding passwords in the config file. Retri supports `${VAR}` expansion:
-
-```bash
-export COMMON_SSH_PASSWORD="my_secret_password"
-```
+For automated execution, prefer SSH keys or named credentials over plaintext
+passwords. Legacy `password` / `secret` fields also support `${VAR}` expansion
+(set the variable before running Retri):
 
 ```yaml
 defaults:
@@ -195,33 +223,55 @@ Fallback environment variables (lowest priority):
 
 | Variable | Description |
 | :--- | :--- |
-| `RETRI_SSH_PASSWORD` | Default SSH password if no other config is found. |
-| `RETRI_SSH_SECRET` | Default sudo secret if no other config is found. |
+| `RETRI_SSH_PASSWORD` | SSH password fallback for automated execution when no credential is configured. |
+| `RETRI_SSH_SECRET` | sudo / enable secret fallback for automated execution when no credential is configured. |
 | `RETRI_LOG_ENCODING` | Source encoding used when `log_encoding` is not configured. |
+
+Automated execution redacts the resolved SSH password and sudo / enable secret
+from terminal output. Interactive recording relies on the terminal hiding
+password input; arbitrary secrets printed by commands can still enter logs.
 
 ## Output Format
 
-Logs are saved to `~/retri-logs` by default.
+Logs are saved to `~/retri-logs` by default; use `--log-dir` to change it.
+New log directories are created with mode `0700` and log files with mode `0600`.
+Existing log files are never overwritten. Generated log names must be single
+local filenames without path separators or control characters.
+
+Terminal output lines have millisecond timestamps by default. Retri's session
+header, footer, `[EXEC]` markers, and marker separator lines have no timestamp
+prefix. Use `--no-timestamp` or `defaults.timestamp: false` to disable output
+line timestamps.
+
+Example automated Linux log (the prompt, echo, and output depend on the host):
 
 File: `example-host_20000101_000000.log`
+
 ```text
 ============================================================
  TARGET HOST : example-host
  DEVICE TYPE : linux
  START TIME  : 2000-01-01 00:00:00
 ============================================================
-[2000-01-01 00:00:00.100]
-[2000-01-01 00:00:00.101] ----------------------------------------
-[2000-01-01 00:00:00.101] [EXEC] uptime
-[2000-01-01 00:00:00.101] ----------------------------------------
-[2000-01-01 00:00:00.102] operator@example-host:~$ uptime
-[2000-01-01 00:00:00.103]  00:00:00 up 1 day,  0 user,  load average: 0.00, 0.00, 0.00
-[2000-01-01 00:00:00.104]
-[2000-01-01 00:00:00.104] ----------------------------------------
-[2000-01-01 00:00:00.104] [EXEC] sudo whoami
-[2000-01-01 00:00:00.104] ----------------------------------------
-[2000-01-01 00:00:00.105] operator@example-host:~$ sudo whoami
-[2000-01-01 00:00:00.105] root
+
+----------------------------------------
+[EXEC] unset HISTFILE
+----------------------------------------
+[2000-01-01 00:00:00.100] operator@example-host:~$ unset HISTFILE
+
+----------------------------------------
+[EXEC] uptime
+----------------------------------------
+[2000-01-01 00:00:00.200] operator@example-host:~$ uptime
+[2000-01-01 00:00:00.201]  00:00:00 up 1 day,  1 user,  load average: 0.00, 0.00, 0.00
+
+----------------------------------------
+[EXEC] whoami
+----------------------------------------
+[2000-01-01 00:00:00.300] operator@example-host:~$ whoami
+[2000-01-01 00:00:00.301] operator
+[2000-01-01 00:00:00.802] operator@example-host:~$ exit
+[2000-01-01 00:00:00.803] logout
 
 ============================================================
  LOG END     : 2000-01-01 00:00:00
@@ -233,28 +283,51 @@ The shell/CLI prompt, command echo, and output therefore come from the same
 remote terminal session; Retri does not derive a Linux prompt from user,
 hostname, or directory values.
 
-Before an automated Linux batch, Retri sends and records `unset HISTFILE` in
-the same PTY. This prevents the batch commands and final `exit` from being
-written to the remote shell's persistent history. Interactive recording modes
-and network-device CLI history are not changed.
+Before an automated batch with `device_type: linux` (the default), Retri sends
+and records `unset HISTFILE` to suppress persistent history in shells such as
+Bash. History behavior depends on the remote shell and its configuration.
+Interactive recording modes and network-device CLI history are not changed.
 
-The `[EXEC]` marker is followed by the terminal transcript's
-`prompt + command` line. An idle prompt is not written separately before the
-marker. Retri records the terminal-rendered result of the actual PTY stream; it
-does not merge a separately received prompt with a command, nor does it create
-a command line when the remote terminal sends no echo:
+`[EXEC]` marks commands sent during automated execution, including
+`setup_commands` and `unset HISTFILE`. The final exit command has no `[EXEC]`
+marker. When a prompt is detected, it stays buffered for the terminal's command
+echo after the marker. Retri does not synthesize a prompt or command echo that
+the remote terminal did not display.
 
-```text
-----------------------------------------
-[EXEC] nv con diff
-----------------------------------------
-[2000-01-01 00:00:00.100] operator@example-switch:mgmt:~$ nv con diff
-```
+Local and interactive SSH recordings use `SESSION LOG` in the header instead
+of `TARGET HOST` / `DEVICE TYPE` and do not add `[EXEC]` markers.
 
 When Retri successfully sends the configured exit command and the session
 closes, a non-zero remote shell status inherited from the last command does not
 turn the whole session into an SSH failure. SSH transport status 255 and
 signal-based termination remain failures.
 
+### Terminal Rendering and Character Encoding
+
+Retri renders ANSI controls, carriage-return redraws, and cursor edits before
+writing lines. Tabs are expanded, trailing whitespace is trimmed, and repeated
+blank lines are collapsed. Logs are terminal-rendered text, not byte-for-byte
+captures of the PTY stream.
+
+The default `log_encoding: raw` preserves the surviving source bytes without
+character conversion. To convert a known source encoding to UTF-8, set:
+
+```yaml
+defaults:
+  log_encoding: shift_jis
+```
+
+For automated execution, this can also be set on a group, device type, or host.
+Local and interactive SSH recording use `defaults.log_encoding`.
+`--log-encoding` overrides the setting in all modes.
+
+Supported values are `raw`, `utf-8`, `shift_jis` (including CP932 /
+Windows-31J), `euc-jp`, `iso-8859-1`, `windows-1252`, `gb18030`, `gbk`, `big5`,
+and `euc-kr`. If a rendered line is malformed for the configured encoding,
+Retri warns once per session and preserves that line's source bytes in the
+same `.log`. It does not create a `.raw` sidecar; fallback lines can make the
+log contain mixed encodings.
+
 ## License
+
 Distributed under the MIT License. See LICENSE for more information.
