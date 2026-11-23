@@ -35,14 +35,11 @@ SSH recording require a terminal; local recording also requires a shell.
 In Bash, use `curl` to install the latest `.deb` for your architecture.
 
 ```bash
-(
-  set -eo pipefail
-  url=$(curl -fsS https://api.github.com/repos/cotta-dev/retri/releases/latest |
-    grep -o "https://github\.com/cotta-dev/retri/releases/download/[^\"[:space:]]*_$(dpkg --print-architecture)\.deb")
-  deb=$(mktemp /tmp/retri.XXXXXX.deb)
-  curl -gfsSLo "$deb" --proto =https "$url"
-  chmod 644 "$deb" && sudo apt-get install -y "$deb"
-)
+retri_release=$(curl -fsS https://api.github.com/repos/cotta-dev/retri/releases/latest) &&
+retri_url=$(grep -o "https://github\.com/cotta-dev/retri/releases/download/[^\"[:space:]]*_$(dpkg --print-architecture)\.deb" <<< "$retri_release") &&
+retri_deb=$(mktemp /tmp/retri.XXXXXX.deb) &&
+curl -gfsSLo "$retri_deb" --proto =https "$retri_url" &&
+chmod 644 "$retri_deb" && sudo apt-get install -y "$retri_deb"
 ```
 
 Alternatively, download the `.deb` matching `dpkg --print-architecture` from the
