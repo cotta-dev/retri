@@ -4,6 +4,9 @@ Retri は既存の `password`、`secret`、`${VAR}`、`RETRI_SSH_PASSWORD`、
 `RETRI_SSH_SECRET` をそのまま利用できます。名前付き credential は任意機能であり、
 Bitwarden、Linux keyring の導入は必須ではありません。
 
+これらの取得元は、自動実行（`-H`、`-g`、`--command`、`-f`）と明示的な cache 初期化で
+使います。対話 SSH 記録（`retri <hostname>`）では SSH クライアントの認証を使います。
+
 名前付き credential を使うと、**秘密情報をどこから取得するか**と
 **どこで利用するか**を分離できます。
 
@@ -25,9 +28,9 @@ defaults:
   secret_credential: linux-sudo
 ```
 
-同じ名前付き credential を複数ホストが使う場合でも、`prompt` は1回の Retri 実行につき
-1回だけ表示されます。`session-keyring` cache を有効にすると、同じ Linux ログイン
-セッション内の後続の Retri 実行でも TTL が切れるまで再利用できます。
+同じ名前付き credential を複数ホストが使う場合でも、`prompt` は 1 回の Retri 実行につき
+最大 1 回だけ表示されます。有効な cache があれば入力は不要です。`session-keyring` cache
+を有効にすると、同じ Session Keyring を継承する後続の Retri 実行でも TTL 内は再利用できます。
 
 ## Provider
 
@@ -57,6 +60,7 @@ credentials:
 
 Linux Session Keyring に既に登録されている `user` key を読み込みます。
 Linux kernel APIを直接利用するため、Retriに`keyctl`コマンドは不要です。
+任意の Retri cache を `user-keyring` にしても、この provider の取得元は Session Keyring です。
 
 ```yaml
 credentials:
@@ -67,7 +71,7 @@ credentials:
 
 ### `bitwarden`
 
-公式 Bitwarden CLI の `bw` を使って login item を取得します。
+公式 Bitwarden CLI の `bw` を使って item を取得します。
 接続先は `bw config server` で決まります。
 Retri 自身は vault の login / unlock を行いません。
 
@@ -81,31 +85,36 @@ credentials:
     field: password
 ```
 
-`field` の既定値は `password` です。`username` と custom field 名も指定できます。
+`field` の既定値は `password` です。`password` と `username` には Login item が必要で、
+custom field 名も指定できます。`server` と `account` を指定する場合は両方が必要で、
+現在の CLI profile と一致させます。どちらの keyring cache backend でも両方が必須です。
 
 ### Bitwardenの初期設定
 
-Retriは公式の`bw` CLIを利用します。Retriを実行するWSL環境に`bw`をインストールし、
-Bitwardenの外部公開URLを設定してください。
+Retri は公式の [`bw` CLI](https://bitwarden.com/help/cli/) を利用します。
+Retri を実行する Linux / WSL 環境に `bw` をインストールし、接続可能な Bitwarden URL を
+設定してください。認証操作は、Retri で記録していない手元の対話端末で実行します。
 
 ```bash
 bw config server https://vault.example.com
-bw login your-email@example.com
-bw unlock
+bw login --quiet your-email@example.com
+BW_SESSION="$(bw unlock --raw)" && export BW_SESSION
 ```
 
-`bw unlock` が表示する Bash 用の`export BW_SESSION=...`を、Retriを実行する同じshellで
-実行します。vault itemの内容を表示せず、接続先とunlock状態を確認します。
+`--quiet` で login の出力を抑止し、最後のコマンドで session key を画面に表示せず環境変数へ設定します。
+Retri は同じ shell から実行してください。vault item の内容を表示せず、接続先と unlock 状態を確認します。
 
 ```bash
 bw status
 ```
 
 出力の`serverUrl`と`userId`を使います。`account`にはメールアドレスではなく`userId`を
-指定してください。BitwardenにLogin itemを作成し、名前で検索してitem IDを取得できます。
+指定してください。Bitwarden に Login item を作成し、item ID を取得します。
+任意の CLI 検索では、`jq` がある場合に以下を使うと ID と名前だけを表示できます。
+`bw list items` の出力をそのまま表示すると、秘密のフィールドも含まれます。
 
 ```bash
-bw list items --search retri
+bw list items --search retri | jq -r '.[] | [.id, .name] | @tsv'
 ```
 
 Retriの設定でitemを参照します。`field`の既定値は`password`で、`username`またはcustom
@@ -257,7 +266,8 @@ credential 未設定時は入力を省略します。名前付き `prompt` provi
 の利用は継続します。対象は Retri の自動実行時の認証情報入力です。
 `retri <hostname>` やローカル記録セッション内の SSH / sudo 自体の対話入力は制御しません。
 
-上記の設定では、同じ Linux セッションから先に以下を実行します。
+通常実行の前に以下を実行します。`session-keyring` では同じ Session Keyring を継承する
+Linux セッション、`user-keyring` では同じ UID で実行してください。
 
 ```bash
 retri -c config.yaml --credential-cache-init
@@ -275,6 +285,8 @@ SSH 接続、shell 起動、セッションログ作成、更新確認、初期�
 選択された参照のうち、`cache.backend: session-keyring` または `user-keyring` を設定した
 名前付き credential だけを初期化します。cache 未設定の credential、`password` / `secret` の直接指定、
 legacy 環境変数、`-p` / `-s` の上書き値は入力・取得・保存せずスキップします。
+CLI の `-p` / `-s` は対象選択時にも名前付き参照を上書きするため、上書きされた
+SSH / sudo credential は初期化しません。
 対象が1件もない場合は案内メッセージを表示し、終了コード `0` で正常終了します。
 対象がある場合は Linux keyring が必要で、`prompt` provider は terminal stdin を
 必要とします。設定の不備や対象 credential の取得・保存失敗は引き続きエラーです。
@@ -318,7 +330,7 @@ credentialは非TTYでは省略し、公開鍵認証やsudo不要の自動実行
 host実行は取得済みsnapshotを使います。実行中にsession cacheのTTLが切れても、
 接続済みSSHや待機中hostのsnapshotを破棄しません。TTLは後続実行の再利用期限です。
 
-session cacheのTTLは既定8h、指定範囲1s〜24hです。読み出しても延長しません。
+両 keyring cache backend の TTL は既定 8h、指定範囲 1s〜24h です。読み出しても延長しません。
 TTL短縮時は元の取得時刻からの経過時間にも適用します。識別子には設定ファイルの
 canonical path、credential名、source、ref、field、Bitwarden profileを含めます。
 literal定義の変更は保護されたpayload内で検証し、公開メタデータにはsecretのhashを
@@ -329,11 +341,14 @@ retri -c config.yaml --credential-cache-refresh -g production
 retri -c config.yaml --credential-cache-clear
 ```
 
-refreshは選択されたcacheを削除して同じsourceから取得し直します。取得失敗時に
-旧値を復活させません。clearは現在の定義のcacheを削除し、providerに接続せず終了
-します。削除・改名された定義の旧entryは旧TTLで失効します。cache障害はmissとして
-隠さずエラーにします。別プロセス間のprompt重複排除は行わず、各snapshotは独自の
-期限を持ちます。
+refresh は実行するコマンドのある自動実行ホスト、または明示的な初期化で選ばれた cache を
+削除して同じ source から取得し直します。取得失敗時に旧値を復活させません。
+clear は選択した設定ファイルに現在定義されている全 cached credential の entry を削除し、
+provider に接続せず終了します。ホスト・グループ指定では削除対象を絞り込みません。
+既定の設定ファイルとコマンドディレクトリが未作成なら生成する場合がありますが、
+SSH 接続やセッションログ作成は行いません。削除・改名された定義や以前の backend に
+残る entry は旧 TTL で失効し、clear では削除しません。cache 障害は miss として隠さず
+エラーにします。別プロセス間の prompt 重複排除は行わず、各 snapshot は独自の期限を持ちます。
 
 Linux session keyringは子プロセスに継承され、PAM/service構成により範囲が異なります。
 必ずしも端末や人間のログイン単位ではありません。cache keyは所有者だけに権限を
@@ -366,24 +381,29 @@ Retri が自身のプロセスだけで keyring を作り直しても、親 shel
 できないため、自動的な置き換えは行いません。`keyctl` はこの復旧手順用であり、通常の
 Retri 実行の依存関係ではありません。
 
-v2 cacheはこの未マージPRの旧実装が書いたentryを利用しません。旧実装を実行済みなら
-keyutilsで旧`retri:credential:` keyを確認・削除してください。旧timeout設定失敗に
-より期限なしentryが残っている可能性があります。
+現在の v2 cache は pre-v2 の entry を読み込まず、`--credential-cache-clear` でも
+削除しません。pre-v2 の開発版を使った場合は、keyutils で旧 `retri:credential:` entry を
+確認し、不要と確認したものだけを削除してください。当時の実装では timeout のない
+entry が残る可能性がありました。
 
 ## Bitwardenの運用
 
-`bw`はBitwarden sourceへの実アクセス時だけ必要です。`--nointeraction`、30秒timeout、
-stdout上限を指定し、stderrや応答本文をエラーに出しません。login/unlock/lock/logout/
+`bw` は Bitwarden source への実アクセス時だけ必要です。`--nointeraction`、各コマンド 30 秒の timeout、
+stdout 上限 1 MiB を指定し、stderr や応答本文をエラーに出しません。login/unlock/lock/logout/
 syncはRetriが管理しません。自身のCLI sessionで`BW_SESSION`をexportし、他clientの
 変更が必要なら`bw sync`してください。Retri cacheの失効はCLI vaultの同期を意味
 しません。
 
-Bitwardenのsession cacheには`server`と`account`が必要です。`bw status`の`serverUrl`
+Bitwarden のどちらの keyring cache backend にも `server` と `account` が必要です。`bw status` の `serverUrl`
 と`userId`を使ってください（emailではありません）。cache miss時は接続先・account・
 unlocked状態を確認してからitemを読みます。hit時は`bw`、unlock、ネットワークが不要
-です。vaultのlock/logoutでRetriの独立cacheは消えないため、明示的にclearしてください。
+です。vault の lock/logout で Retri の独立 cache は消えないため、明示的に clear してください。
+clear でも、既に実行中の Retri が取得した snapshot は消去しません。
 接続先/account変更時は設定も更新すると、別cacheとして扱われます。
 
-自動実行ログは既知credentialを受信chunk境界をまたいで伏せ、terminal描画後にも
-伏せます。debugのliteral値も対象です。相手が任意変換したsecretの検出は保証しません。
-対話record modeでRetriが取得していないcredentialは伏せられません。
+自動実行の SSH 出力と debug の端末ストリームは、既知 credential の文字列を受信 chunk の
+境界をまたいで、端末描画前にマスクします。秘密文字列の途中に端末制御が入る場合や、
+別の表現へ変換された場合は一致しないことがあり、自動実行の経路では描画後の再マスクは
+行いません。コマンド見出しと debug の `Sending:` メッセージには設定したコマンドが
+マスクされずに出るため、コマンドへ秘密情報を埋め込まないでください。
+対話記録では Retri が取得していない credential はマスクできません。

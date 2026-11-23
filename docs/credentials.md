@@ -4,6 +4,10 @@ Retri can continue to use the existing `password`, `secret`, `${VAR}`,
 `RETRI_SSH_PASSWORD`, and `RETRI_SSH_SECRET` configuration. Named credentials
 are optional and do not require Bitwarden or Linux keyrings.
 
+These sources are used for automated execution (`-H`, `-g`, `--command`, or
+`-f`) and explicit cache initialization. Interactive SSH recording
+(`retri <hostname>`) uses the SSH client's authentication instead.
+
 Named credentials separate **where a secret comes from** from **where it is
 used**:
 
@@ -25,9 +29,10 @@ defaults:
   secret_credential: linux-sudo
 ```
 
-A named prompt is requested once per Retri invocation even when many hosts use
-it. With `session-keyring` caching, later Retri invocations in the same Linux
-login session can reuse the value until its TTL expires.
+A named prompt is requested at most once per Retri invocation even when many
+hosts use it. A valid cache hit needs no prompt. With `session-keyring` caching,
+later invocations inheriting the same session keyring can reuse the value
+until its TTL expires.
 
 ## Providers
 
@@ -58,6 +63,8 @@ credentials:
 
 Reads an existing Linux session-keyring `user` key using the
 kernel API directly; Retri does not require the `keyctl` command.
+This provider always reads from the session keyring, even when its optional
+Retri cache uses `user-keyring`.
 
 ```yaml
 credentials:
@@ -68,7 +75,7 @@ credentials:
 
 ### `bitwarden`
 
-Reads a Bitwarden login item through the official `bw` CLI.
+Reads a Bitwarden item through the official `bw` CLI.
 `bw config server` controls the server endpoint. Retri does not log in to or unlock the vault for you.
 
 ```yaml
@@ -81,33 +88,39 @@ credentials:
     field: password
 ```
 
-`field` defaults to `password`. `username` and named custom fields are also
-supported.
+`field` defaults to `password`. `password` and `username` require a Login item;
+named custom fields are also supported. If `server` and `account` are supplied,
+they must be supplied together and match the active CLI profile. Both are
+required when either keyring cache backend is enabled.
 
 ### Bitwarden setup
 
-Retri uses the official `bw` CLI. Install it on the same WSL environment where
-you run Retri, then point it at the externally reachable Bitwarden URL:
+Retri uses the official [`bw` CLI](https://bitwarden.com/help/cli/). Install it
+in the same Linux/WSL environment where you run Retri, then point it at your
+reachable Bitwarden URL. Run authentication directly in your own terminal,
+outside a recorded Retri session:
 
 ```bash
 bw config server https://vault.example.com
-bw login your-email@example.com
-bw unlock
+bw login --quiet your-email@example.com
+BW_SESSION="$(bw unlock --raw)" && export BW_SESSION
 ```
 
-Run the `export BW_SESSION=...` command printed by `bw unlock` in the same shell.
-Check the active profile without printing vault items:
+`--quiet` suppresses login output; the last command captures the session key
+without printing it. Keep it in the same shell used to run Retri. Check the
+active profile without printing vault items:
 
 ```bash
 bw status
 ```
 
 Copy `serverUrl` and `userId` from that output. `account` must use `userId`, not
-the email address. Create a Login item in Bitwarden and obtain its item ID,
-for example by searching item names:
+the email address. Create a Login item in Bitwarden and obtain its item ID.
+For an optional CLI lookup, the following example requires `jq` and displays
+only IDs and names. Unfiltered `bw list items` output includes secret fields:
 
 ```bash
-bw list items --search retri
+bw list items --search retri | jq -r '.[] | [.id, .name] | @tsv'
 ```
 
 Then reference the item from Retri. The `field` value is `password` by default;
@@ -263,7 +276,8 @@ values, environment variables, and other providers continue to work. These
 settings control Retri's automated credential acquisition; they do not control
 SSH/sudo interaction inside `retri <hostname>` or local recording sessions.
 
-Prepare the credentials in the same Linux session before normal execution:
+Prepare the credentials before normal execution. With `session-keyring`, use
+the same inherited Linux session keyring; with `user-keyring`, use the same UID:
 
 ```bash
 retri -c config.yaml --credential-cache-init
@@ -283,6 +297,8 @@ and skips update checks. It explicitly permits credential input even when
 Only selected named credentials with `cache.backend: session-keyring` or
 `user-keyring` are initialized. Uncached credentials, direct `password` / `secret`, legacy environment
 fallbacks, and `-p` / `-s` overrides are skipped without input, acquisition or storage.
+Those CLI overrides also replace named references during selection, so the
+overridden SSH or sudo credential is not initialized.
 If none qualify, Retri prints an informational message and exits successfully
 with code `0`. Configuration errors and failures to acquire or store selected
 cached credentials remain errors. Linux keyring support is required when there
@@ -333,8 +349,9 @@ prompts are serialized. Host execution uses that invocation's snapshot even if
 the session cache expires during the run; TTL is a limit on reuse by a later
 invocation, not a deadline that interrupts an established SSH session.
 
-Session cache TTL defaults to 8h and accepts 1s through 24h. A shortened TTL is
-also enforced against the original acquisition time. Reads do not extend it.
+Both keyring cache backends default to an 8h TTL and accept 1s through 24h.
+A shortened TTL is also enforced against the original acquisition time.
+Reads do not extend it.
 Cache identity includes the canonical config path, credential name, source,
 reference, field, and bound Bitwarden profile. A changed literal definition is
 checked inside the protected payload rather than exposed in public metadata.
@@ -346,10 +363,15 @@ retri -c config.yaml --credential-cache-refresh -g production
 retri -c config.yaml --credential-cache-clear
 ```
 
-Refresh deletes each selected cached credential before contacting its source;
-failure does not restore the old value. Clear removes current definitions and
-exits without contacting providers. Removed/renamed definitions expire at their
-old TTL. Cache access or storage errors fail explicitly; they are not misses.
+Refresh deletes each cached credential selected for runnable automated hosts
+or explicit initialization before contacting its source; failure does not
+restore the old value. Clear removes entries for all currently defined cached
+credentials in the selected config and exits without contacting providers.
+Host/group selectors do not limit clear. Clear may create the default config
+and commands directory if missing, but opens no SSH session or session log.
+Removed/renamed definitions and entries in a previous backend expire at their
+old TTL; clear does not remove them. Cache access or storage errors fail
+explicitly; they are not misses.
 Concurrent invocations may obtain different snapshots; no cross-process prompt
 deduplication is promised. Each stored payload carries its own expiry.
 
@@ -389,28 +411,34 @@ replacement inside Retri alone would not be shared with subsequent invocations
 from the parent shell. `keyctl` is only used for this recovery procedure, not
 required for ordinary Retri operation.
 
-The v2 cache ignores entries written by earlier versions of this unmerged PR.
-If you ran those versions, inspect and remove their `retri:credential:` keys
-with keyutils; an earlier failed timeout could have left an unbounded entry.
+The current v2 cache does not read pre-v2 entries, and
+`--credential-cache-clear` does not remove them. If you used a pre-v2
+development build, inspect its legacy `retri:credential:` entries with keyutils
+and remove only confirmed obsolete entries; those builds could leave entries
+without a timeout.
 
 ## Bitwarden operational contract
 
 `bw` is required only when a Bitwarden source is actually contacted. Retri uses
-`--nointeraction`, a 30-second command timeout, and bounded stdout; provider
-stderr and response bodies are never included in errors. Retri does not manage
+`--nointeraction`, a 30-second timeout per command, and a 1 MiB stdout limit.
+Provider stderr and response bodies are never included in errors. Retri does not manage
 login, unlock, lock, logout, or sync. Export `BW_SESSION` from your own unlocked
 CLI session, and run `bw sync` when you need changes made by another client.
 `get item` reads the CLI vault; expiry of Retri's cache does not guarantee that
 this vault has been synchronized with the server.
 
-For Bitwarden session caching, `server` and `account` are required. Use the exact
-`serverUrl` and `userId` from `bw status` (not the email address). On a miss, Retri
+For either Bitwarden keyring cache backend, `server` and `account` are required.
+Use the exact `serverUrl` and `userId` from `bw status` (not the email address). On a miss, Retri
 checks those values and unlocked status before reading the item. A cache hit
 needs neither `bw` nor an unlocked vault or network. Lock/logout does not revoke
-Retri's independent copy: clear it explicitly. Switching accounts or servers
+Retri's independent copy: clear it explicitly. Clear does not erase snapshots
+already acquired by a running Retri process. Switching accounts or servers
 requires updating the bound profile, which selects a different cache identity.
 
-Automated logs redact known credential values across read boundaries and again
-after terminal rendering; debug output also redacts literal values. This does
-not promise detection of arbitrary secret transformations by a remote peer.
-Interactive record mode cannot redact credentials Retri has never acquired.
+Automated SSH output and its debug terminal stream redact known literal
+credential values across read boundaries before terminal rendering. Terminal
+controls inserted inside a secret or other transformations can prevent literal
+matching; the automated execution path does not apply a second redaction pass
+after rendering. Command headers and debug `Sending:` messages contain the
+configured commands without redaction, so do not embed secrets in commands.
+Interactive recording cannot redact credentials Retri has never acquired.
