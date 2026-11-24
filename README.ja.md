@@ -36,11 +36,17 @@ Bash で次を実行すると、アーキテクチャに合う最新版の `.deb
 インストールできます（`curl` が必要です）。
 
 ```bash
-retri_release=$(curl -fsS https://api.github.com/repos/cotta-dev/retri/releases/latest) &&
-retri_url=$(grep -o "https://github\.com/cotta-dev/retri/releases/download/[^\"[:space:]]*_$(dpkg --print-architecture)\.deb" <<< "$retri_release") &&
-retri_deb=$(mktemp /tmp/retri.XXXXXX.deb) &&
-curl -gfsSLo "$retri_deb" --proto =https "$retri_url" &&
-chmod 644 "$retri_deb" && sudo apt-get install -y "$retri_deb"
+(
+  set -e
+  base=https://github.com/cotta-dev/retri/releases
+  tag=$(curl -fsS -o /dev/null -w '%{redirect_url}' "$base/latest")
+  tag=${tag##*/}
+  arch=$(dpkg --print-architecture)
+  deb=$(mktemp /tmp/retri.XXXXXX.deb)
+  curl -gfsSLo "$deb" --proto =https "$base/download/$tag/retri_${tag#v}_$arch.deb"
+  chmod 644 "$deb"
+  sudo apt-get install -y "$deb"
+)
 ```
 
 手動でダウンロードする場合は、
