@@ -36,15 +36,12 @@ In Bash, use `curl` to install the latest `.deb` for your architecture.
 
 ```bash
 (
-  set -e
-  base=https://github.com/cotta-dev/retri/releases
-  tag=$(curl -fsS -o /dev/null -w '%{redirect_url}' "$base/latest")
-  tag=${tag##*/}
-  arch=$(dpkg --print-architecture)
-  deb=$(mktemp /tmp/retri.XXXXXX.deb)
-  curl -gfsSLo "$deb" --proto =https "$base/download/$tag/retri_${tag#v}_$arch.deb"
-  chmod 644 "$deb"
-  sudo apt-get install -y "$deb"
+  set -eo pipefail
+  cd "$(mktemp -dp /tmp || echo /dev/null)"
+  curl -fsS https://api.github.com/repos/cotta-dev/retri/releases/latest |
+    grep -Po '"browser_download_url":\s*"\Khttps://github\.com/[^"\s]*_'"$(dpkg --print-architecture)"'\.deb(?=")' |
+    xargs -r curl -fsSLO --proto =https
+  chmod a+rX . *.deb && sudo apt-get install -y ./*.deb
 )
 ```
 
