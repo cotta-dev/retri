@@ -2,9 +2,11 @@
 #
 # Priority chain (low → high):
 #   defaults < groups < device_types < hosts < CLI flags
-# RETRI_SSH_PASSWORD / RETRI_SSH_SECRET apply only when config is unset.
+# RETRI_SSH_PASSWORD / RETRI_SSH_SECRET are fallbacks for unset credentials.
+# RETRI_LOG_ENCODING is a fallback when no source encoding is configured.
 #
-# Commands are AGGREGATED across all layers (not overridden).
+# Commands are aggregated across all layers. Within each layer the order is
+# command_file, commands, command.
 # suffix is read from defaults / groups (+ CLI); filename/timestamp format from defaults (+ CLI).
 #
 # ${VAR} in legacy password/secret and literal credential value is expanded from environment variables at runtime.
@@ -100,7 +102,7 @@ credentials:
 # ===========================================================================
 defaults:
   # --- CommonFields (shared with device_types / groups / hosts) ---
-  user: ""                  # [optional] default: current OS user (passed to ssh as-is)
+  user: ""                  # [optional] default: let ssh choose the user
   password: ""              # [optional] default: none  — SSH password. Prefer ${VAR} or key auth
   password_credential: "" # [optional] named credential; exclusive with password in this layer
   secret: ""                # [optional] default: none  — sudo / enable secret. Prefer ${VAR}
@@ -110,7 +112,7 @@ defaults:
                            # false suppresses fallback and named prompt providers; valid cache still works
                            # inherited by groups/device_types/hosts; explicit true or false overrides
                            # does not control prompts in interactive SSH/local recording sessions
-  command: ""               # [optional] default: none  — single command (ignored if commands is set)
+  command: ""               # [optional] default: none — single command added after commands
   commands: []              # [optional] default: []    — list of commands to run
   command_file: ""          # [optional] default: none  — path to file with commands (one per line)
   log_dir: "~/retri-logs"   # [optional] default: ~/retri-logs
@@ -118,12 +120,12 @@ defaults:
                             #   raw, utf-8, shift_jis (CP932/Windows-31J), euc-jp,
                             #   iso-8859-1, windows-1252, gb18030, gbk, big5, euc-kr
                             #   malformed rendered lines retain pre-conversion bytes in the same .log; no .raw sidecar is created
-  prompt_timeout: 300       # [optional] default: 300   — seconds to wait for prompt (interactive only)
+  prompt_timeout: 300       # [optional] default: 300 — seconds to wait for a prompt after an automated command
 
   # --- defaults-only fields ---
   device_type: "linux"      # [optional] default: linux — fallback device type for all hosts
   parallel: "auto"          # [optional] default: 5     — concurrent executions. "auto"=num CPUs or a number
-  timestamp: true           # [optional] default: true  — prefix each log line with a timestamp
+  timestamp: true           # [optional] default: true — prefix terminal output lines with a timestamp
   update_check: true        # [optional] default: true  — check GitHub Releases once per day and notify if newer
   log_commands_only: false  # [optional] default: false — session logs contain only submitted commands and their output
   filename_format: "{host}_{timestamp}{suffix}.log"  # [optional] default: as shown. vars: {host} {timestamp} {suffix}
